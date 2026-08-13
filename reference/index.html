@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TradeOS — Trading Journal Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #050713;
+      --panel: rgba(14, 20, 42, .82);
+      --panel-2: rgba(20, 28, 58, .9);
+      --line: rgba(111, 231, 255, .16);
+      --text: #eef7ff;
+      --muted: #8f9bb7;
+      --cyan: #45e5ff;
+      --violet: #8b5cff;
+      --green: #19f6a3;
+      --red: #ff4d6d;
+      --yellow: #ffd166;
+      --radius: 24px;
+      --shadow: 0 24px 80px rgba(0, 0, 0, .48);
+    }
+    body {
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 8%, rgba(69,229,255,.22), transparent 32%),
+        radial-gradient(circle at 88% 14%, rgba(139,92,255,.26), transparent 34%),
+        radial-gradient(circle at 45% 85%, rgba(25,246,163,.12), transparent 36%),
+        var(--bg);
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,.9), transparent 85%);
+      pointer-events: none;
+    }
+    .app { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; position: relative; z-index: 1; }
+    aside {
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(10, 15, 33, .86), rgba(7, 9, 22, .65));
+      backdrop-filter: blur(22px);
+      position: sticky; top: 0; height: 100vh;
+    }
+    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 34px; }
+    .mark { width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(135deg, var(--cyan), var(--violet)); display: grid; place-items: center; color: #02111d; font-weight: 900; box-shadow: 0 0 34px rgba(69,229,255,.28); }
+    .logo h1 { font-size: 19px; letter-spacing: -.03em; }
+    .logo p { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    nav { display: grid; gap: 8px; }
+    .nav-item { border: 1px solid transparent; color: var(--muted); padding: 13px 14px; border-radius: 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: .2s; }
+    .nav-item.active, .nav-item:hover { color: var(--text); background: rgba(69,229,255,.08); border-color: rgba(69,229,255,.22); }
+    .sidebar-card { margin-top: 28px; padding: 18px; border-radius: 22px; background: linear-gradient(145deg, rgba(69,229,255,.12), rgba(139,92,255,.1)); border: 1px solid var(--line); }
+    .sidebar-card small, .muted { color: var(--muted); }
+    main { padding: 28px; max-width: 1480px; width: 100%; margin: 0 auto; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 24px; }
+    .eyebrow { color: var(--cyan); text-transform: uppercase; letter-spacing: .18em; font-size: 11px; font-weight: 800; }
+    h2 { font-size: clamp(30px, 4vw, 54px); line-height: 1; letter-spacing: -.06em; margin-top: 8px; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    button, .btn { border: 0; color: var(--text); background: rgba(255,255,255,.08); border: 1px solid var(--line); padding: 12px 16px; border-radius: 15px; font-weight: 750; cursor: pointer; transition: .2s; }
+    button:hover, .btn:hover { transform: translateY(-1px); border-color: rgba(69,229,255,.45); }
+    .primary { background: linear-gradient(135deg, var(--cyan), var(--violet)); color: #031021; border: 0; box-shadow: 0 14px 42px rgba(69,229,255,.18); }
+    .grid { display: grid; gap: 16px; }
+    .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); backdrop-filter: blur(22px); }
+    .kpi { padding: 20px; position: relative; overflow: hidden; }
+    .kpi::after { content: ""; position: absolute; right: -24px; top: -24px; width: 96px; height: 96px; border-radius: 50%; background: currentColor; opacity: .08; filter: blur(2px); }
+    .kpi label { color: var(--muted); font-size: 13px; }
+    .kpi strong { display: block; font-size: 31px; letter-spacing: -.04em; margin-top: 8px; }
+    .kpi span { display: inline-block; margin-top: 10px; font-size: 12px; color: var(--muted); }
+    .green { color: var(--green); } .red { color: var(--red); } .cyan { color: var(--cyan); } .yellow { color: var(--yellow); }
+    .layout { grid-template-columns: 1.12fr .88fr; align-items: start; }
+    .panel { padding: 22px; }
+    .panel-head { display: flex; justify-content: space-between; align-items: start; gap: 14px; margin-bottom: 18px; }
+    .panel h3 { font-size: 19px; letter-spacing: -.02em; }
+    .tabs { display: inline-flex; padding: 4px; gap: 3px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid var(--line); }
+    .tab { padding: 8px 12px; border-radius: 10px; color: var(--muted); font-size: 12px; cursor: pointer; }
+    .tab.active { background: rgba(69,229,255,.16); color: var(--text); }
+    .chart { height: 260px; display: flex; align-items: end; gap: 13px; padding-top: 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .bar { flex: 1; min-width: 22px; border-radius: 999px 999px 0 0; background: linear-gradient(180deg, var(--green), rgba(25,246,163,.18)); position: relative; }
+    .bar.loss { background: linear-gradient(180deg, var(--red), rgba(255,77,109,.16)); }
+    .bar::before { content: attr(data-label); position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 11px; }
+    .trade-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .field { display: grid; gap: 8px; padding: 14px; border-radius: 17px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.07); }
+    .field label { color: var(--muted); font-size: 12px; font-weight: 700; }
+    input, select { width: 100%; background: rgba(3, 8, 22, .82); border: 1px solid rgba(111,231,255,.18); border-radius: 13px; color: var(--text); padding: 12px; outline: none; }
+    input:focus, select:focus { border-color: var(--cyan); box-shadow: 0 0 0 4px rgba(69,229,255,.08); }
+    .full { grid-column: 1 / -1; }
+    .signal-grid { display: grid; gap: 10px; }
+    .signal { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border-radius: 16px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.07); }
+    .pill { padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: rgba(69,229,255,.12); color: var(--cyan); border: 1px solid rgba(69,229,255,.22); }
+    .pill.good { background: rgba(25,246,163,.12); color: var(--green); border-color: rgba(25,246,163,.22); }
+    .pill.bad { background: rgba(255,77,109,.12); color: var(--red); border-color: rgba(255,77,109,.22); }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; }
+    th, td { padding: 14px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 13px; }
+    th { color: var(--muted); font-size: 12px; font-weight: 800; }
+    .page-section { margin-top: 16px; }
+    .pages { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .page-card { padding: 18px; min-height: 170px; }
+    .phone { width: 290px; max-width: 100%; margin: 0 auto; border-radius: 38px; padding: 12px; background: linear-gradient(145deg, rgba(255,255,255,.18), rgba(255,255,255,.04)); border: 1px solid rgba(255,255,255,.18); }
+    .phone-inner { min-height: 580px; border-radius: 30px; background: #070b19; padding: 18px; overflow: hidden; border: 1px solid rgba(69,229,255,.16); }
+    .mobile-card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); border-radius: 20px; padding: 14px; margin-top: 12px; }
+    .ring { width: 150px; height: 150px; border-radius: 50%; margin: 10px auto; background: conic-gradient(var(--green) 0 68%, var(--red) 68% 100%); display: grid; place-items: center; }
+    .ring div { width: 112px; height: 112px; border-radius: 50%; background: #070b19; display: grid; place-items: center; text-align: center; }
+    @media (max-width: 1050px) { .app { grid-template-columns: 1fr; } aside { position: static; height: auto; } nav { grid-template-columns: repeat(3,1fr); } .layout, .kpis, .pages { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 720px) { main { padding: 18px; } .topbar, .panel-head { flex-direction: column; align-items: stretch; } .layout, .kpis, .trade-form, .pages { grid-template-columns: 1fr; } nav { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="logo"><div class="mark">T</div><div><h1>TradeOS</h1><p>Options journal intelligence</p></div></div>
+      <nav>
+        <div class="nav-item active">◆ Dashboard</div>
+        <div class="nav-item">＋ New Trade</div>
+        <div class="nav-item">◈ Analytics</div>
+        <div class="nav-item">▣ Trade Log</div>
+        <div class="nav-item">◎ Rule Engine</div>
+        <div class="nav-item">⚙ Settings</div>
+      </nav>
+      <div class="sidebar-card">
+        <small>Today’s AI read</small>
+        <h3 style="margin:8px 0 6px">High discipline day</h3>
+        <p class="muted" style="font-size:13px">Your best win probability appears when the 15-min rule and EMA cross are both confirmed before entry.</p>
+      </div>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div>
+          <div class="eyebrow">Daily trading command center</div>
+          <h2>Track every setup. Learn what actually wins.</h2>
+        </div>
+        <div class="actions"><button>Export CSV</button><button>Import Broker</button><button class="primary">Log New Trade</button></div>
+      </div>
+
+      <section class="grid kpis">
+        <div class="card kpi green"><label>Daily P/L</label><strong>+$842</strong><span>+6.7% from yesterday</span></div>
+        <div class="card kpi cyan"><label>Weekly Win Rate</label><strong>68%</strong><span>17 wins / 25 trades</span></div>
+        <div class="card kpi yellow"><label>Monthly Net</label><strong>+$4.8K</strong><span>Risk cap respected 91%</span></div>
+        <div class="card kpi red"><label>Loss Avoidance Signal</label><strong>72%</strong><span>Bad trades had ≥2 rules missed</span></div>
+      </section>
+
+      <section class="grid layout">
+        <div class="card panel">
+          <div class="panel-head">
+            <div><h3>Daily / Weekly / Monthly Comparison</h3><p class="muted">Green bars are net-winning periods; red bars are net-losing periods.</p></div>
+            <div class="tabs"><div class="tab active">Daily</div><div class="tab">Weekly</div><div class="tab">Monthly</div></div>
+          </div>
+          <div class="chart" aria-label="profit loss chart">
+            <div class="bar" data-label="Mon" style="height:64%"></div>
+            <div class="bar loss" data-label="Tue" style="height:38%"></div>
+            <div class="bar" data-label="Wed" style="height:78%"></div>
+            <div class="bar" data-label="Thu" style="height:54%"></div>
+            <div class="bar loss" data-label="Fri" style="height:44%"></div>
+            <div class="bar" data-label="Wk" style="height:88%"></div>
+            <div class="bar" data-label="Mo" style="height:72%"></div>
+          </div>
+        </div>
+
+        <div class="card panel">
+          <div class="panel-head"><div><h3>Winning Probability Engine</h3><p class="muted">Analyzes which requirements correlate with profitable trades.</p></div><span class="pill good">68% overall</span></div>
+          <div class="signal-grid">
+            <div class="signal"><span>15 minutes passed before entry</span><b class="green">+18% win lift</b></div>
+            <div class="signal"><span>Entered below 15m high / above 15m low</span><b class="green">+23% win lift</b></div>
+            <div class="signal"><span>9 or 14 EMA crossed</span><b class="green">+14% win lift</b></div>
+            <div class="signal"><span>25% portfolio risk cap respected</span><b class="yellow">Lower drawdown</b></div>
+            <div class="signal"><span>Market excitement: Neutral</span><b class="red">-9% win lift</b></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid layout page-section">
+        <div class="card panel">
+          <div class="panel-head"><div><h3>New Trade Entry</h3><p class="muted">Fast checklist before trade, numbers after exit. Timestamp is detected automatically.</p></div><span class="pill">10:07:42 AM ET</span></div>
+          <div class="grid trade-form">
+            <div class="field"><label>Market excitement</label><select><option>Up</option><option>Down</option><option>Neutral</option></select></div>
+            <div class="field"><label>15 minutes passed?</label><select><option>Yes</option><option>No</option></select></div>
+            <div class="field"><label>Entry respects 15-min high/low?</label><select><option>Yes</option><option>No</option></select></div>
+            <div class="field"><label>9 or 14 EMA crossed?</label><select><option>Yes</option><option>No</option></select></div>
+            <div class="field"><label>25% of portfolio max?</label><select><option>Yes</option><option>No</option></select></div>
+            <div class="field"><label>Buying</label><select><option>Call</option><option>Put</option></select></div>
+            <div class="field"><label>Contracts</label><input type="number" value="4" /></div>
+            <div class="field"><label>Purchase price</label><input type="number" value="2.15" /></div>
+            <div class="field"><label>Selling price</label><input type="number" value="3.40" /></div>
+            <div class="field"><label>Auto Result</label><input value="+$500 · +58.1%" /></div>
+            <button class="primary full">Save Trade + Update Dashboard</button>
+          </div>
+        </div>
+
+        <div class="card panel">
+          <div class="phone"><div class="phone-inner">
+            <div class="eyebrow">iOS Preview</div>
+            <h3 style="font-size:28px;margin:8px 0">Today</h3>
+            <div class="ring"><div><b class="green" style="font-size:28px">68%</b><small class="muted">win rate</small></div></div>
+            <div class="mobile-card"><small class="muted">Daily P/L</small><h3 class="green">+$842</h3></div>
+            <div class="mobile-card"><small class="muted">Next best setup</small><p>Wait for 15m confirmation + EMA cross before entering CALL.</p></div>
+            <button class="primary" style="width:100%;margin-top:14px">Log Trade</button>
+          </div></div>
+        </div>
+      </section>
+
+      <section class="grid pages page-section">
+        <div class="card page-card"><h3>1. Dashboard</h3><p class="muted">Daily, weekly, monthly P/L, win rate, average gain/loss, rule discipline, and AI summary.</p></div>
+        <div class="card page-card"><h3>2. New Trade</h3><p class="muted">Auto timestamp, rule checklist, Call/Put, contracts, purchase and selling prices, auto P/L.</p></div>
+        <div class="card page-card"><h3>3. Analytics</h3><p class="muted">Probability analysis by requirement, condition combinations, best/worst setup patterns.</p></div>
+        <div class="card page-card"><h3>4. Trade Log</h3><p class="muted">Searchable table of every trade with filters by date, Call/Put, market direction, and result.</p></div>
+        <div class="card page-card"><h3>5. Rule Engine</h3><p class="muted">Configure checklist rules, risk limits, market session settings, and probability thresholds.</p></div>
+        <div class="card page-card"><h3>6. Reports</h3><p class="muted">Daily output dashboard export, weekly/monthly review, screenshots/PDF/CSV sharing.</p></div>
+      </section>
+
+      <section class="card panel page-section">
+        <div class="panel-head"><div><h3>Recent Trades</h3><p class="muted">Clear green/red feedback with exact dollars and percentage.</p></div><span class="pill good">Live calculations</span></div>
+        <table>
+          <thead><tr><th>Time</th><th>Bias</th><th>Rules Met</th><th>Type</th><th>Contracts</th><th>Buy</th><th>Sell</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>10:07 AM</td><td>Up</td><td>4/4</td><td>Call</td><td>4</td><td>$2.15</td><td>$3.40</td><td class="green">+$500 · +58.1%</td></tr>
+            <tr><td>11:22 AM</td><td>Neutral</td><td>2/4</td><td>Put</td><td>2</td><td>$1.80</td><td>$1.25</td><td class="red">-$110 · -30.6%</td></tr>
+            <tr><td>1:41 PM</td><td>Down</td><td>3/4</td><td>Put</td><td>3</td><td>$2.70</td><td>$3.15</td><td class="green">+$135 · +16.7%</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
