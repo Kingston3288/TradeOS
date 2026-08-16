@@ -39,4 +39,30 @@ describe('private launch persistence foundation', () => {
     expect(userTwoTrades).toHaveLength(1);
     expect(userTwoTrades[0]?.symbol).toBe('QQQ');
   });
+
+  it('updates an existing trade id in place instead of duplicating it', async () => {
+    const repository = createInMemoryTradeRepository();
+    const draft = { ...createTradeDraft(), id: 'trade-1', symbol: 'SPY', purchasePrice: 2.4, userId: 'user-1' };
+
+    await repository.saveTrade('user-1', draft);
+    await repository.saveTrade('user-1', { ...draft, symbol: 'IWM', purchasePrice: 3.1 });
+
+    const userTrades = await repository.listTrades('user-1');
+    expect(userTrades).toHaveLength(1);
+    expect(userTrades[0]?.symbol).toBe('IWM');
+    expect(userTrades[0]?.purchasePrice).toBe(3.1);
+  });
+
+  it('deletes only the selected user trade without affecting other users', async () => {
+    const repository = createInMemoryTradeRepository();
+    const first = { ...createTradeDraft(), id: 'trade-1', symbol: 'SPY', userId: 'user-1' };
+    const second = { ...createTradeDraft(), id: 'trade-2', symbol: 'QQQ', userId: 'user-2' };
+
+    await repository.saveTrade('user-1', first);
+    await repository.saveTrade('user-2', second);
+    await repository.deleteTrade('user-1', 'trade-1');
+
+    expect(await repository.listTrades('user-1')).toEqual([]);
+    expect((await repository.listTrades('user-2'))[0]?.symbol).toBe('QQQ');
+  });
 });

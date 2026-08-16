@@ -1,6 +1,7 @@
 import { ConditionAnalysis, PeriodStats, SetupPattern, Trade, TradeFinancials } from './types';
 
 const CONTRACT_MULTIPLIER = 100;
+const MIN_SAMPLE_SIZE = 5;
 const CONDITION_KEYS: Array<{ key: keyof Trade; label: string }> = [
   { key: 'fifteenMinutesPassed', label: '15 minutes passed' },
   { key: 'entryRespectsFifteenMinuteHighLow', label: 'Entry respected first 15m high/low' },
@@ -18,11 +19,20 @@ export function calculateTradeFinancials(trade: Trade): TradeFinancials {
   const profitLossPercentage = trade.purchasePrice === 0 ? 0 : ((trade.sellingPrice - trade.purchasePrice) / trade.purchasePrice) * 100;
   const result = netProfitLoss > 0 ? 'gain' : netProfitLoss < 0 ? 'loss' : 'breakeven';
 
-  return { status: 'closed', grossProfitLoss, netProfitLoss, profitLossPercentage, result };
+  const status = trade.status === 'partial' ? 'partial' : 'closed';
+  return { status, grossProfitLoss, netProfitLoss, profitLossPercentage, result };
 }
 
 export function closedTrades(trades: Trade[]): Trade[] {
-  return trades.filter((trade) => calculateTradeFinancials(trade).status === 'closed');
+  return trades.filter((trade) => {
+    const status = calculateTradeFinancials(trade).status;
+    return status === 'closed' || status === 'partial';
+  });
+}
+
+function sampleWarning(sampleSize: number): string | null {
+  if (sampleSize >= MIN_SAMPLE_SIZE) return null;
+  return `Low sample size (n=${sampleSize}). Treat this as directional only.`;
 }
 
 function average(values: number[]): number {
@@ -113,6 +123,8 @@ export function analyzeCondition(trades: Trade[], key: keyof Trade, label: strin
     winLift: trueWinRate - baselineWinRate,
     trueSampleSize: trueTrades.length,
     falseSampleSize: falseTrades.length,
+    trueSampleWarning: sampleWarning(trueTrades.length),
+    falseSampleWarning: sampleWarning(falseTrades.length),
   };
 }
 

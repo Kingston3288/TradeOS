@@ -51,6 +51,10 @@ describe('calculateTradeFinancials', () => {
     });
   });
 
+  it('preserves partial status for realized partial positions', () => {
+    expect(calculateTradeFinancials(trade({ status: 'partial', sellingPrice: 1.8 })).status).toBe('partial');
+  });
+
   it('subtracts fees and classifies loss or breakeven from net P/L', () => {
     expect(calculateTradeFinancials(trade({ sellingPrice: 1.25, fees: 20 })).result).toBe('loss');
     expect(calculateTradeFinancials(trade({ sellingPrice: 1.5, fees: 0 })).result).toBe('breakeven');
@@ -73,6 +77,8 @@ describe('analyzeCondition', () => {
       falseSampleSize: 1,
       trueWinRate: 1,
       falseWinRate: 0,
+      trueSampleWarning: 'Low sample size (n=2). Treat this as directional only.',
+      falseSampleWarning: 'Low sample size (n=1). Treat this as directional only.',
     });
     expect(result.baselineWinRate).toBeCloseTo(2 / 3);
     expect(result.winLift).toBeCloseTo(1 / 3);
