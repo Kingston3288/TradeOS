@@ -9,23 +9,25 @@ Launch TradeOS as a private, premium trading journal web app that feels like a r
 Use this as aspirational positioning, not a guaranteed financial claim. Add visible disclaimers before public launch: TradeOS is a journaling and analytics tool, not financial advice, and trading involves risk.
 
 ## Multica Launch Board
+Workspace: **TradeOS**
+Workspace ID: `c982c3f5-2b79-442f-9f50-2f1642c95251`
 Project: **TradeOS Webapp Launch**
-Project ID: `3a72d901-186d-4dc5-ade4-fd479ab604ee`
+Project ID: `c86569a2-981b-46e9-9e39-8bca371774ee`
 
 Issues:
 
-1. `LUX-36` — P0: Product launch scope and success metrics
-2. `LUX-37` — P0: Production architecture decision
-3. `LUX-38` — P0: Private beta auth gate
-4. `LUX-39` — P0: Database schema and persistence
-5. `LUX-40` — P1: Security and data isolation
-6. `LUX-41` — P1: Premium trading platform UI upgrade
-7. `LUX-42` — P1: Trade entry and analytics hardening
-8. `LUX-43` — P1: Animated launch website
-9. `LUX-44` — P1: Deployment pipeline
-10. `LUX-45` — P1: QA and private beta release
-11. `LUX-46` — P2: Launch analytics and feedback loop
-12. `LUX-47` — P2: Public launch readiness
+1. `TRAD-2` — P0: Product launch scope and success metrics
+2. `TRAD-3` — P0: Production architecture decision
+3. `TRAD-4` — P0: Private beta auth gate
+4. `TRAD-5` — P0: Database schema and persistence
+5. `TRAD-6` — P1: Security and data isolation
+6. `TRAD-7` — P1: Premium trading platform UI upgrade
+7. `TRAD-8` — P1: Trade entry and analytics hardening
+8. `TRAD-9` — P1: Animated launch website
+9. `TRAD-10` — P1: Deployment pipeline
+10. `TRAD-11` — P1: QA and private beta release
+11. `TRAD-12` — P2: Launch analytics and feedback loop
+12. `TRAD-13` — P2: Public launch readiness
 
 ## Recommended Production Stack
 
