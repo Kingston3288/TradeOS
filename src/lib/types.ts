@@ -6,6 +6,7 @@ export type ComputedResult = TradeResult | 'open';
 
 export interface Trade {
   id: string;
+  userId?: string;
   createdAt: string;
   timezone: string;
   tradeDate: string;
