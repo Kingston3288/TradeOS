@@ -1,6 +1,6 @@
 export type MarketExcitement = 'up' | 'down' | 'neutral';
 export type BuyingType = 'call' | 'put';
-export type TradeStatus = 'open' | 'closed';
+export type TradeStatus = 'open' | 'partial' | 'closed';
 export type TradeResult = 'gain' | 'loss' | 'breakeven';
 export type ComputedResult = TradeResult | 'open';
 
@@ -70,6 +70,8 @@ export interface ConditionAnalysis {
   winLift: number;
   trueSampleSize: number;
   falseSampleSize: number;
+  trueSampleWarning: string | null;
+  falseSampleWarning: string | null;
 }
 
 export interface SetupPattern {

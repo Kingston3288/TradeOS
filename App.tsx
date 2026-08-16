@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { analyzeAllConditions, buildDashboardStats, calculateTradeFinancials, formatCurrency, formatPercent } from './src/lib/analytics';
+import { exportTradesToCsv, exportTradesToJson, importTradesFromJson } from './src/lib/serialization';
 import { localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -15,6 +16,9 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('Dashboard');
   const [trades, setTrades] = useState<Trade[]>(localDatabase.trades);
   const [draft, setDraft] = useState<Trade>(() => ({ ...localDatabase.trades[0]!, id: 'draft', sellingPrice: null, status: 'open', notes: '' }));
+  const [reportOutput, setReportOutput] = useState('');
+  const [importPayload, setImportPayload] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const compact = width < 780;
   const stats = useMemo(() => buildDashboardStats(trades, '2026-08-13'), [trades]);
@@ -26,6 +30,28 @@ export default function App() {
     const errors = validateTradeInput(nextTrade);
     if (errors.length) return;
     setTrades((current) => [nextTrade, ...current]);
+  }
+
+  function exportCsv() {
+    setReportOutput(exportTradesToCsv(trades));
+  }
+
+  function exportJson() {
+    setReportOutput(exportTradesToJson(trades));
+  }
+
+  function importJson() {
+    try {
+      const imported = importTradesFromJson(importPayload);
+      const valid = imported.filter((trade) => validateTradeInput(trade).length === 0);
+      const byId = new Map(trades.map((trade) => [trade.id, trade]));
+      for (const trade of valid) byId.set(trade.id, trade);
+      setTrades([...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      setImportError(null);
+      setReportOutput(`Imported ${valid.length} trade(s).`);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Failed to import trades.');
+    }
   }
 
   return (
@@ -60,7 +86,7 @@ export default function App() {
           {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} saveDraft={saveDraft} />}
           {screen === 'Trade Log' && <TradeLog trades={trades} />}
           {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} />}
-          {screen === 'Reports' && <Reports trades={trades} stats={stats} />}
+          {screen === 'Reports' && <Reports stats={stats} reportOutput={reportOutput} importPayload={importPayload} importError={importError} setImportPayload={setImportPayload} onExportCsv={exportCsv} onExportJson={exportJson} onImportJson={importJson} />}
           {screen === 'Settings' && <Settings />}
         </ScrollView>
       </View>
@@ -86,7 +112,15 @@ function Dashboard({ stats, compact }: { stats: ReturnType<typeof buildDashboard
 function NewTrade({ draft, setDraft, saveDraft }: { draft: Trade; setDraft: (t: Trade) => void; saveDraft: () => void }) {
   const financials = calculateTradeFinancials(draft);
   const errors = validateTradeInput(draft);
-  const update = (patch: Partial<Trade>) => setDraft({ ...draft, ...patch });
+  const update = (patch: Partial<Trade>) => {
+    const next = { ...draft, ...patch };
+    if (next.sellingPrice === null) {
+      next.status = 'open';
+    } else if (next.status === 'open') {
+      next.status = 'closed';
+    }
+    setDraft(next);
+  };
   return <GlassCard>
     <Text style={styles.cardTitle}>New Trade Entry</Text><Text style={styles.muted}>Timestamp auto-detected. Selling price can stay blank until the trade closes.</Text>
     <View style={styles.formGrid}>
@@ -100,6 +134,7 @@ function NewTrade({ draft, setDraft, saveDraft }: { draft: Trade; setDraft: (t: 
       <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Number(v) || 0 })} />
       <Field label="Purchase Price" value={String(draft.purchasePrice)} keyboardType="numeric" onChangeText={(v) => update({ purchasePrice: Number(v) || 0 })} />
       <Field label="Selling Price" value={draft.sellingPrice === null ? '' : String(draft.sellingPrice)} keyboardType="numeric" onChangeText={(v) => update({ sellingPrice: v === '' ? null : Number(v) || 0 })} />
+      <Segment label="Position" value={draft.status} options={draft.sellingPrice === null ? ['open'] : ['partial', 'closed']} onChange={(v) => update({ status: v as Trade['status'] })} />
     </View>
     <View style={styles.resultBox}><Text style={styles.mutedSmall}>Auto Result</Text><Text style={[styles.resultText, { color: financials.result === 'loss' ? colors.red : financials.result === 'open' ? colors.yellow : colors.green }]}>{financials.result === 'open' ? 'Open trade' : `${formatCurrency(financials.netProfitLoss ?? 0)} · ${(financials.profitLossPercentage ?? 0).toFixed(1)}%`}</Text></View>
     {errors.map((e) => <Text key={e} style={styles.error}>{e}</Text>)}
@@ -108,15 +143,15 @@ function NewTrade({ draft, setDraft, saveDraft }: { draft: Trade; setDraft: (t: 
 }
 
 function TradeLog({ trades }: { trades: Trade[] }) {
-  return <GlassCard><Text style={styles.cardTitle}>Trade Log</Text>{trades.map((trade) => { const f = calculateTradeFinancials(trade); return <View key={trade.id} style={styles.tradeRow}><View><Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text><Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text></View><Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text></View>; })}</GlassCard>;
+  return <GlassCard><Text style={styles.cardTitle}>Trade Log</Text>{trades.map((trade) => { const f = calculateTradeFinancials(trade); return <View key={trade.id} style={styles.tradeRow}><View><Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text><Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts · {trade.status.toUpperCase()}</Text></View><Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text></View>; })}</GlassCard>;
 }
 
 function Analytics({ analyses, stats }: { analyses: ReturnType<typeof analyzeAllConditions>; stats: ReturnType<typeof buildDashboardStats> }) {
-  return <View style={styles.twoCol}>{analyses.map((a) => <GlassCard key={String(a.key)}><Text style={styles.cardTitle}>{a.label}</Text><Metric label="True win rate" value={`${formatPercent(a.trueWinRate)} · n=${a.trueSampleSize}`} /><Metric label="False win rate" value={`${formatPercent(a.falseWinRate)} · n=${a.falseSampleSize}`} /><Metric label="Win lift" value={`${(a.winLift * 100).toFixed(0)} pts`} /><Metric label="Avg P/L true" value={formatCurrency(a.trueAverageProfitLoss)} /></GlassCard>)}<GlassCard><Text style={styles.cardTitle}>Best Pattern</Text><Text style={styles.muted}>{stats.bestSetupPattern?.label}</Text><Metric label="Sample" value={`n=${stats.bestSetupPattern?.sampleSize ?? 0}`} /></GlassCard><GlassCard><Text style={styles.cardTitle}>Worst Pattern</Text><Text style={styles.muted}>{stats.worstSetupPattern?.label}</Text><Metric label="Sample" value={`n=${stats.worstSetupPattern?.sampleSize ?? 0}`} /></GlassCard></View>;
+  return <View style={styles.twoCol}>{analyses.map((a) => <GlassCard key={String(a.key)}><Text style={styles.cardTitle}>{a.label}</Text><Metric label="True win rate" value={`${formatPercent(a.trueWinRate)} · n=${a.trueSampleSize}`} /><Metric label="False win rate" value={`${formatPercent(a.falseWinRate)} · n=${a.falseSampleSize}`} /><Metric label="Win lift" value={`${(a.winLift * 100).toFixed(0)} pts`} /><Metric label="Avg P/L true" value={formatCurrency(a.trueAverageProfitLoss)} />{a.trueSampleWarning && <Text style={styles.warning}>{a.trueSampleWarning}</Text>}{a.falseSampleWarning && <Text style={styles.warning}>{a.falseSampleWarning}</Text>}</GlassCard>)}<GlassCard><Text style={styles.cardTitle}>Best Pattern</Text><Text style={styles.muted}>{stats.bestSetupPattern?.label}</Text><Metric label="Sample" value={`n=${stats.bestSetupPattern?.sampleSize ?? 0}`} /></GlassCard><GlassCard><Text style={styles.cardTitle}>Worst Pattern</Text><Text style={styles.muted}>{stats.worstSetupPattern?.label}</Text><Metric label="Sample" value={`n=${stats.worstSetupPattern?.sampleSize ?? 0}`} /></GlassCard></View>;
 }
 
-function Reports({ stats }: { trades: Trade[]; stats: ReturnType<typeof buildDashboardStats> }) {
-  return <GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from closed trades.</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /><TouchableOpacity style={styles.secondaryButton}><Text style={styles.buttonText}>Export CSV</Text></TouchableOpacity></GlassCard>;
+function Reports({ stats, reportOutput, importPayload, importError, setImportPayload, onExportCsv, onExportJson, onImportJson }: { stats: ReturnType<typeof buildDashboardStats>; reportOutput: string; importPayload: string; importError: string | null; setImportPayload: (value: string) => void; onExportCsv: () => void; onExportJson: () => void; onImportJson: () => void }) {
+  return <GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from realized trades (closed + partial).</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /><View style={styles.reportActions}><TouchableOpacity style={styles.secondaryButton} onPress={onExportCsv}><Text style={styles.buttonText}>Export CSV</Text></TouchableOpacity><TouchableOpacity style={styles.secondaryButton} onPress={onExportJson}><Text style={styles.buttonText}>Export JSON</Text></TouchableOpacity></View><Field label="Import JSON" value={importPayload} multiline numberOfLines={6} onChangeText={setImportPayload} /><TouchableOpacity style={styles.primaryButton} onPress={onImportJson}><Text style={styles.primaryText}>Import Trades</Text></TouchableOpacity>{importError && <Text style={styles.error}>{importError}</Text>}{reportOutput ? <View style={styles.reportOutput}><Text style={styles.mutedSmall}>Export / Import Output</Text><Text selectable style={styles.reportText}>{reportOutput}</Text></View> : null}</GlassCard>;
 }
 
 function Settings() { return <GlassCard><Text style={styles.cardTitle}>Settings / Rule Engine</Text><Metric label="Timezone" value={localDatabase.settings.timezone} /><Metric label="Market Open" value={localDatabase.settings.marketOpenTime} /><Metric label="Risk Limit" value={`${localDatabase.settings.riskLimitPercent}%`} /><Metric label="Portfolio" value={formatCurrency(localDatabase.settings.portfolioValue)} /></GlassCard>; }
@@ -175,8 +210,12 @@ const styles = StyleSheet.create({
   primaryButton: { backgroundColor: colors.cyan, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 15, alignSelf: 'flex-start' },
   primaryText: { color: '#031021', fontWeight: '900' },
   secondaryButton: { borderColor: colors.line, borderWidth: 1, padding: 13, borderRadius: 15, alignSelf: 'flex-start', marginTop: 14 },
+  reportActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  reportOutput: { marginTop: 14, borderColor: colors.line, borderWidth: 1, borderRadius: 14, padding: 12, backgroundColor: 'rgba(3,8,22,.82)' },
+  reportText: { color: colors.text, fontSize: 12, marginTop: 8 },
   buttonText: { color: colors.text, fontWeight: '900' },
   error: { color: colors.red, marginBottom: 4 },
+  warning: { color: colors.yellow, marginTop: 8, fontSize: 12 },
   tradeRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,.07)' },
   tradeSymbol: { color: colors.text, fontWeight: '900' },
 });
