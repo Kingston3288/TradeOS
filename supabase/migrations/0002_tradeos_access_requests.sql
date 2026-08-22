@@ -23,6 +23,10 @@ create policy "tradeos_access_anon_insert" on public.tradeos_access_requests
   for insert to anon
   with check (status = 'pending');
 
+create policy "tradeos_access_user_select_own" on public.tradeos_access_requests
+  for select to authenticated
+  using (lower(email) = lower(auth.jwt() ->> 'email'));
+
 create policy "tradeos_access_owner_select" on public.tradeos_access_requests
   for select to authenticated
   using (auth.jwt() ->> 'email' = 'kingston3288@gmail.com');

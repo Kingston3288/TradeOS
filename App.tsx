@@ -1,17 +1,122 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import type { Session } from '@supabase/supabase-js';
 import { analyzeAllConditions, buildDashboardStats, calculateTradeFinancials, formatCurrency, formatPercent } from './src/lib/analytics';
 import { localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
 import { colors, shadow } from './src/theme';
+import { supabase, checkApprovedStatus, OWNER_EMAIL } from './src/lib/supabase';
 
 type Screen = 'Dashboard' | 'New Trade' | 'Trade Log' | 'Analytics' | 'Reports' | 'Settings';
+type AccessState = 'checking' | 'approved' | 'pending' | 'denied';
 
 const screens: Screen[] = ['Dashboard', 'New Trade', 'Trade Log', 'Analytics', 'Reports', 'Settings'];
 
 export default function App() {
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
+  const [access, setAccess] = useState<AccessState>('checking');
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoading(false);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      setLoading(false);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // Resolve access whenever the session changes.
+  useEffect(() => {
+    if (!session?.user?.email) { setAccess('checking'); return; }
+    let alive = true;
+    checkApprovedStatus(session.user.email).then((s) => { if (alive) setAccess(s); });
+    return () => { alive = false; };
+  }, [session?.user?.email]);
+
+  if (loading) return <Centered><Text style={styles.mutedSmall}>Loading…</Text></Centered>;
+
+  // Not signed in -> Login
+  if (!session) return <LoginScreen />;
+
+  // Signed in but not approved -> status gate
+  if (access !== 'approved') return <AccessGate email={session.user.email ?? ''} state={access} onSignOut={() => supabase.auth.signOut()} />;
+
+  // Approved -> the trading app
+  return <TradingApp ownerEmail={session.user.email ?? ''} onSignOut={() => supabase.auth.signOut()} />;
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
+  return <SafeAreaView style={styles.safe}><View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>{children}</View></SafeAreaView>;
+}
+
+function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true); setError('');
+    const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (e) setError(e.message || 'Unable to sign in.');
+    setBusy(false);
+  }
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style="light" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <View style={[styles.logoRow, { marginBottom: 8 }]}>
+          <View style={styles.logoMark}><Text style={styles.logoMarkText}>T</Text></View>
+          <Text style={styles.logoTitle}>TradeOS</Text>
+        </View>
+        <Text style={[styles.muted, { marginBottom: 24, textAlign: 'center' }]}>Private trading command center</Text>
+        <View style={{ width: '100%', maxWidth: 380, gap: 12 }}>
+          <Text style={styles.mutedSmall}>Email</Text>
+          <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@email.com" placeholderTextColor={colors.muted} />
+          <Text style={styles.mutedSmall}>Password</Text>
+          <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor={colors.muted} />
+          {!!error && <Text style={{ color: colors.red }}>{error}</Text>}
+          <TouchableOpacity style={[styles.primaryButton, { alignSelf: 'stretch', alignItems: 'center' }]} onPress={submit} disabled={busy}>
+            <Text style={styles.primaryText}>{busy ? 'Signing in…' : 'Log In'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => supabase.auth.signUp({ email: email.trim(), password })}>
+            <Text style={[styles.muted, { textAlign: 'center', fontSize: 13 }]}>Need an account? Request access at tradeos.win/apply</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function AccessGate({ email, state, onSignOut }: { email: string; state: AccessState; onSignOut: () => void }) {
+  const copy =
+    state === 'pending'
+      ? { title: 'Application pending', body: 'Your request is under review. You\'ll be notified once you\'re approved.' }
+      : state === 'denied'
+      ? { title: 'Access not granted', body: 'Your application was not approved. Contact us if you believe this is a mistake.' }
+      : { title: 'Sorry', body: 'We couldn\'t verify your access yet. Please try again later.' };
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style="light" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <Text style={[styles.logoTitle, { marginBottom: 12 }]}>{copy.title}</Text>
+        <Text style={[styles.muted, { textAlign: 'center', maxWidth: 360, marginBottom: 24 }]}>{copy.body}</Text>
+        <Text style={[styles.mutedSmall, { marginBottom: 12 }]}>Signed in as {email}</Text>
+        <TouchableOpacity style={styles.primaryButton} onPress={onSignOut}><Text style={styles.primaryText}>Sign out</Text></TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: () => void }) {
+  const isOwner = (ownerEmail || '').toLowerCase() === OWNER_EMAIL.toLowerCase();
   const [screen, setScreen] = useState<Screen>('Dashboard');
   const [trades, setTrades] = useState<Trade[]>(localDatabase.trades);
   const [draft, setDraft] = useState<Trade>(() => ({ ...localDatabase.trades[0]!, id: 'draft', sellingPrice: null, status: 'open', notes: '' }));
@@ -45,6 +150,9 @@ export default function App() {
             ))}
           </View>
           {!compact && <GlassCard><Text style={styles.mutedSmall}>Today’s AI read</Text><Text style={styles.cardTitle}>High discipline day</Text><Text style={styles.muted}>Best win probability appears when the 15-minute rule and EMA cross confirm before entry.</Text></GlassCard>}
+          <TouchableOpacity style={[styles.navItem, { marginTop: 'auto' }]} onPress={onSignOut}>
+            <Text style={styles.navText}>Sign out {isOwner ? '(owner)' : ''}</Text>
+          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.main} contentContainerStyle={styles.mainContent}>
