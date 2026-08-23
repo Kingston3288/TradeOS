@@ -18,6 +18,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
   const [access, setAccess] = useState<AccessState>('checking');
+  const [mustChange, setMustChange] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -35,7 +36,17 @@ export default function App() {
   useEffect(() => {
     if (!session?.user?.email) { setAccess('checking'); return; }
     let alive = true;
-    checkApprovedStatus(session.user.email).then((s) => { if (alive) setAccess(s); });
+    checkApprovedStatus(session.user.email).then((s) => {
+      if (alive) setAccess(s);
+      // If approved, check whether the user must change their password on first login.
+      if (s === 'approved') {
+        supabase.from('tradeos_access_requests')
+          .select('must_change_password')
+          .eq('email', session.user.email)
+          .maybeSingle()
+          .then(({ data }) => { if (alive && data?.must_change_password) setMustChange(true); });
+      }
+    });
     return () => { alive = false; };
   }, [session?.user?.email]);
 
@@ -47,8 +58,53 @@ export default function App() {
   // Signed in but not approved -> status gate
   if (access !== 'approved') return <AccessGate email={session.user.email ?? ''} state={access} onSignOut={() => supabase.auth.signOut()} />;
 
+  // First login -> force password change
+  if (mustChange) return <ChangePasswordScreen email={session.user.email ?? ''} onDone={() => setMustChange(false)} onSignOut={() => supabase.auth.signOut()} />;
+
   // Approved -> the trading app
   return <TradingApp ownerEmail={session.user.email ?? ''} onSignOut={() => supabase.auth.signOut()} />;
+}
+
+function ChangePasswordScreen({ email, onDone, onSignOut }: { email: string; onDone: () => void; onSignOut: () => void }) {
+  const [p1, setP1] = useState('');
+  const [p2, setP2] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (p1.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (p1 !== p2) { setError('Passwords do not match.'); return; }
+    setBusy(true); setError('');
+    const { error: e } = await supabase.auth.updateUser({ password: p1 });
+    if (e) { setError(e.message || 'Could not update password.'); setBusy(false); return; }
+    // Clear the must-change flag
+    await supabase.from('tradeos_access_requests')
+      .update({ must_change_password: false, temp_password: null })
+      .eq('email', email);
+    setBusy(false);
+    onDone();
+  }
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style="light" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <Text style={[styles.logoTitle, { marginBottom: 8 }]}>Set a new password</Text>
+        <Text style={[styles.muted, { textAlign: 'center', maxWidth: 340, marginBottom: 24 }]}>For security, please choose a new password before continuing.</Text>
+        <View style={{ width: '100%', maxWidth: 380, gap: 12 }}>
+          <Text style={styles.mutedSmall}>New password</Text>
+          <TextInput style={styles.input} value={p1} onChangeText={setP1} secureTextEntry placeholder="At least 8 characters" placeholderTextColor={colors.muted} />
+          <Text style={styles.mutedSmall}>Confirm password</Text>
+          <TextInput style={styles.input} value={p2} onChangeText={setP2} secureTextEntry placeholder="Repeat password" placeholderTextColor={colors.muted} />
+          {!!error && <Text style={{ color: colors.red }}>{error}</Text>}
+          <TouchableOpacity style={[styles.primaryButton, { alignSelf: 'stretch', alignItems: 'center' }]} onPress={submit} disabled={busy}>
+            <Text style={styles.primaryText}>{busy ? 'Saving…' : 'Update password'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onSignOut}><Text style={[styles.muted, { textAlign: 'center', fontSize: 13 }]}>Sign out</Text></TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
