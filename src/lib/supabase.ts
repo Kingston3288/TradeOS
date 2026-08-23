@@ -27,3 +27,10 @@ export async function checkApprovedStatus(email: string): Promise<'approved' | '
   if (data.status === 'denied') return 'denied';
   return 'pending';
 }
+
+// Friendly message for a login that succeeded at auth but has no approved access.
+export function accessDeniedMessage(status: 'pending' | 'denied' | 'none'): string {
+  if (status === 'pending') return 'Your application is still under review. You\u2019ll be able to log in once you\u2019re approved.';
+  if (status === 'denied') return 'This account was not approved for TradeOS access. Contact us if you believe this is a mistake.';
+  return 'No access approved for this account. Request access at tradeos.win/apply to get started.';
+}

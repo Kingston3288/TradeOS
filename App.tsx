@@ -25,9 +25,13 @@ export default function App() {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       setLoading(false);
+      // If the token expires or the session is signed out/refreshed invalid, go back to login.
+      if (!s || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' && !s) {
+        setAccess('checking');
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -120,7 +124,14 @@ function LoginScreen() {
   async function submit() {
     setBusy(true); setError('');
     const { error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (e) setError(e.message || 'Unable to sign in.');
+    if (e) {
+      const m = (e.message || '').toLowerCase();
+      if (m.includes('invalid login') || m.includes('invalid credentials')) {
+        setError('Incorrect email or password. If you haven\u2019t been approved yet, request access at tradeos.win/apply, or use the link below to reset your password.');
+      } else {
+        setError(e.message || 'Unable to sign in.');
+      }
+    }
     setBusy(false);
   }
 
@@ -144,6 +155,19 @@ function LoginScreen() {
           </TouchableOpacity>
           <TouchableOpacity onPress={() => supabase.auth.signUp({ email: email.trim(), password })}>
             <Text style={[styles.muted, { textAlign: 'center', fontSize: 13 }]}>Need an account? Request access at tradeos.win/apply</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.href })}>
+            <Text style={[styles.muted, { textAlign: 'center', fontSize: 13 }]}>Forgot password? Reset it here</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={async () => {
+            if (!email.trim()) { setError('Enter your email first to send a magic link.'); return; }
+            setBusy(true); setError('');
+            const { error: e } = await supabase.auth.signInWithOtp({ email: email.trim() });
+            if (e) { setError(e.message || 'Could not send magic link.'); }
+            else { setError(''); alert('A sign-in link (magic link) was sent to your email. Please check your inbox.'); }
+            setBusy(false);
+          }}>
+            <Text style={[styles.muted, { textAlign: 'center', fontSize: 13 }]}>Or sign in with a magic link (no password needed)</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -197,6 +221,14 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
           <View style={styles.logoRow}>
             <View style={styles.logoMark}><Text style={styles.logoMarkText}>T</Text></View>
             <View><Text style={styles.logoTitle}>TradeOS</Text><Text style={styles.mutedSmall}>Options journal intelligence</Text></View>
+          </View>
+          <View style={{ paddingVertical: 2, paddingLeft: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.cyan + '22' }}>
+                <Text style={{ fontSize: 9, fontWeight: '800', letterSpacing: .08, textTransform: 'uppercase', color: colors.cyan }}>Private Beta</Text>
+              </View>
+            </View>
+            <Text style={[styles.mutedSmall, { marginTop: 4, fontSize: 11 }]} numberOfLines={1}>{ownerEmail}</Text>
           </View>
           <View style={[styles.nav, compact && styles.navCompact]}>
             {screens.map((item) => (
