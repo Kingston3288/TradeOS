@@ -539,7 +539,7 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
     </GlassCard>
     {/* per-symbol */}
     <GlassCard><Text style={styles.cardTitle}>Edge by Symbol</Text>
-      {breakDownBySymbol(trades).slice(0, 6).map((s) => <View key={s.symbol} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.symbol}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · {s.trades} trades</Text></View>)}
+      {breakDownBySymbol(trades).slice(0, 6).length > 0 && <AnimatedBarChart data={breakDownBySymbol(trades).slice(0, 8).map((s) => ({ label: s.symbol, value: s.winRate, pct: Math.round(s.winRate * 100), sub: `${s.trades} trades` }))} unit="" />}
     </GlassCard>
     {/* per-strategy */}
     <GlassCard><Text style={styles.cardTitle}>Edge by Strategy</Text>
@@ -550,23 +550,22 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
     {/* Time of day win rate */}
     <GlassCard><Text style={styles.cardTitle}>Win Rate by Time of Day</Text>
       {winRateByTimeOfDay(trades).length === 0 && <Text style={styles.muted}>Add a trade time (HH:MM) to trades to see when you win most.</Text>}
-      {winRateByTimeOfDay(trades).map((s) => <View key={s.hour} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+      {winRateByTimeOfDay(trades).length > 0 && <AnimatedBarChart data={winRateByTimeOfDay(trades).map((s) => ({ label: s.label.split('–')[0] || s.label, value: s.winRate, pct: Math.round(s.winRate * 100), sub: `n=${s.trades}` }))} unit="" />}
     </GlassCard>
     {/* Win rate by weekday */}
     <GlassCard><Text style={styles.cardTitle}>Win Rate by Day of Week</Text>
       {winRateByWeekday(trades).length === 0 && <Text style={styles.muted}>Set a day of week (Mon-Fri) on trades to see your best trading days.</Text>}
-      {winRateByWeekday(trades).map((s) => <View key={s.weekday} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.weekday}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+      {winRateByWeekday(trades).length > 0 && <AnimatedBarChart data={winRateByWeekday(trades).map((s) => ({ label: s.weekday, value: s.winRate, pct: Math.round(s.winRate * 100), sub: `n=${s.trades}` }))} unit="" />}
     </GlassCard>
     {/* Direction win-rate (VWAP / MACD) */}
-    <GlassCard><Text style={styles.cardTitle}>Edge by Condition</Text>
-      <Metric label="Overall win rate" value={`${formatPercent(overallWinRate)}`} />
-      {winRateByDirection(trades, 'vwapDirection', VWAP_LABELS).length === 0 && <Text style={styles.muted}>Log more closed trades to rank VWAP / MACD values.</Text>}
-      {winRateByDirection(trades, 'vwapDirection', VWAP_LABELS).map((s) => <View key={s.value} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+    <GlassCard><Text style={styles.cardTitle}>Edge by Condition — VWAP</Text>
+      {winRateByDirection(trades, 'vwapDirection', VWAP_LABELS).length === 0 && <Text style={styles.muted}>Log more closed trades to rank VWAP values.</Text>}
+      {winRateByDirection(trades, 'vwapDirection', VWAP_LABELS).length > 0 && <AnimatedBarChart data={winRateByDirection(trades, 'vwapDirection', VWAP_LABELS).map((s) => ({ label: s.value.toUpperCase(), value: s.winRate, pct: Math.round(s.winRate * 100), sub: s.label, color: s.value === 'up' ? '#45e5ff' : '#7b61ff' }))} unit="" />}
     </GlassCard>
     {/* Win rate by MACD trend */}
     <GlassCard><Text style={styles.cardTitle}>Win Rate by MACD Trend</Text>
       {winRateByDirection(trades, 'macdTrend', MACD_LABELS).length === 0 && <Text style={styles.muted}>Log more closed trades to rank MACD trend values.</Text>}
-      {winRateByDirection(trades, 'macdTrend', MACD_LABELS).map((s) => <View key={s.value} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+      {winRateByDirection(trades, 'macdTrend', MACD_LABELS).length > 0 && <AnimatedBarChart data={winRateByDirection(trades, 'macdTrend', MACD_LABELS).map((s) => ({ label: s.value.toUpperCase(), value: s.winRate, pct: Math.round(s.winRate * 100), sub: s.label, color: s.value === 'rising' ? '#35ff9b' : '#ff4d6d' }))} unit="" />}
     </GlassCard>
   </View>;
 }
@@ -682,6 +681,43 @@ function ResultLineChart({ results }: { results: { id: string; symbol: string; n
   return (
     <View style={{ marginBottom: 16, borderRadius: 16, borderColor: colors.line, borderWidth: 1, padding: 10, backgroundColor: 'rgba(255,255,255,.03)' }}>
       <Text style={styles.mutedSmall}>Results Trend (cumulative P/L)</Text>
+      {React.createElement('div', { dangerouslySetInnerHTML: { __html: svg } })}
+    </View>
+  );
+}
+
+interface BarDatum { label: string; value: number; pct: number; sub?: string; color?: string; }
+function AnimatedBarChart({ data, unit }: { data: BarDatum[]; unit?: string }) {
+  const W = 560, H = 200, PAD = 30, TOP = 18, BOT = 34;
+  const slot = (W - 2 * PAD) / Math.max(data.length, 1);
+  const barW = Math.min(46, slot * 0.5);
+  const max = Math.max(1, ...data.map((d) => d.pct));
+  const bars = data.map((d, i) => {
+    const x = PAD + slot * i + (slot - barW) / 2;
+    const h = Math.max(2, (d.pct / max) * (H - TOP - BOT));
+    const y = H - BOT - h;
+    const color = d.color || (d.pct >= 50 ? '#35ff9b' : d.pct >= 40 ? '#45e5ff' : '#7b61ff');
+    return { x, y, h, d, color, i };
+  });
+  const rects = bars.map((b) =>
+    `<rect x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${barW.toFixed(1)}" height="${b.h.toFixed(1)}" rx="7" fill="${b.color}" class="bar-anim" style="animation-delay:${(b.i * 0.12).toFixed(2)}s"><title>${b.d.label} · ${b.d.pct}%${b.d.sub ? ' · ' + b.d.sub : ''}</title></rect>`
+  ).join('');
+  const labels = bars.map((b) =>
+    `<text x="${(b.x + barW / 2).toFixed(1)}" y="${H - BOT + 16}" text-anchor="middle" fill="rgba(143,166,195,.95)" font-size="11" font-weight="700">${b.d.label}</text>` +
+    `<text x="${(b.x + barW / 2).toFixed(1)}" y="${(b.y - 6).toFixed(1)}" text-anchor="middle" fill="${b.d.pct >= 50 ? '#35ff9b' : '#45e5ff'}" font-size="11" font-weight="900">${b.d.pct}%${unit ? ' ' + unit : ''}</text>`
+  ).join('');
+  const svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;overflow:visible">
+    <defs><style>
+      @keyframes growbar { from { transform: scaleY(0); transform-origin: 50% 100%; } to { transform: scaleY(1); } }
+      .bar-anim { transform-origin: 50% 100%; animation: growbar .7s cubic-bezier(.22,.9,.3,1) forwards; }
+      @keyframes poplabel { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      .bar-anim ~ text, text.bar-label { animation: poplabel .5s ease-out both; }
+    </style></defs>
+    ${rects}
+    ${labels}
+  </svg>`;
+  return (
+    <View style={{ marginVertical: 10 }}>
       {React.createElement('div', { dangerouslySetInnerHTML: { __html: svg } })}
     </View>
   );
