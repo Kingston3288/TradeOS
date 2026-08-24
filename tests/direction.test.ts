@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { winRateByDirection, VWAP_LABELS, MACD_LABELS } from '../src/lib/analytics';
+import { daysHeld, winRateByDirection, VWAP_LABELS, MACD_LABELS } from '../src/lib/analytics';
 import type { Trade } from '../src/lib/types';
 
 function trade(over: Partial<Trade>): Trade {
@@ -31,15 +31,27 @@ describe('winRateByDirection (VWAP / MACD)', () => {
   });
   it('buckets MACD trend raising/falling', () => {
     const trades = [
-      trade({ macdTrend: 'raising', sellingPrice: 12 }),
+      trade({ macdTrend: 'rising', sellingPrice: 12 }),
       trade({ macdTrend: 'falling', sellingPrice: 8 }),
     ];
     const rows = winRateByDirection(trades, 'macdTrend', MACD_LABELS);
     expect(rows).toHaveLength(2);
-    const r = rows.find((x) => x.value === 'raising');
+    const r = rows.find((x) => x.value === 'rising');
     expect(r!.winRate).toBeCloseTo(1);
   });
   it('ignores trades with no direction set', () => {
     expect(winRateByDirection([trade({})], 'vwapDirection', VWAP_LABELS)).toHaveLength(0);
+  });
+});
+
+describe('daysHeld', () => {
+  it('returns whole days held (0 if under 1 day)', () => {
+    const day = 86400000;
+    expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z', closedAt: '2026-08-20T11:00:00Z' }))).toBe(0); // <1 day
+    expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z', closedAt: '2026-08-22T10:00:00Z' }))).toBe(2);
+    expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z', closedAt: '2026-08-21T11:00:00Z' }))).toBe(1);
+  });
+  it('returns 0 when closedAt is missing', () => {
+    expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z' }))).toBe(0); // no closedAt
   });
 });

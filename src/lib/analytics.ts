@@ -552,4 +552,19 @@ export function winRateByDirection(trades: Trade[], field: 'vwapDirection' | 'ma
 }
 
 export const VWAP_LABELS = { up: 'Price above VWAP', down: 'Price below VWAP' };
-export const MACD_LABELS = { raising: 'MACD rising', falling: 'MACD falling' };
+export const MACD_LABELS = { rising: 'MACD rising', falling: 'MACD falling' };
+
+/** Whole days a closed trade was held. 0 if held less than 1 day (or undeterminable). */
+export function daysHeld(trade: Trade): number {
+  if (!trade.closedAt || !trade.createdAt) return 0;
+  const ms = new Date(trade.closedAt).getTime() - new Date(trade.createdAt).getTime();
+  if (!isFinite(ms) || ms < 0) return 0;
+  return Math.floor(ms / 86400000);
+}
+
+/** Average days held across closed trades. */
+export function averageDaysHeld(trades: Trade[]): number {
+  const closed = closedTrades(trades).filter((t) => t.closedAt);
+  if (closed.length === 0) return 0;
+  return closed.reduce((s, t) => s + daysHeld(t), 0) / closed.length;
+}

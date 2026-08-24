@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, PanResponder, Animated, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
+import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -260,7 +260,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   function openSaveConfirm(t: Trade) { setPendingSave(t); setConfirmVisible(true); }
   function closeSaveConfirm() { setConfirmVisible(false); }
   function confirmSave() { if (pendingSave) { /* persist the pending draft */ const t = pendingSave; setPendingSave(null); setConfirmVisible(false); saveDraftToRepo(t); } }
-  async function saveDraftToRepo(t: Trade) { const computed = calculateTradeFinancials(t); const tr: Trade = { ...t, id: t.id && t.id !== 'draft' ? t.id : crypto.randomUUID(), createdAt: t.createdAt || new Date().toISOString(), status: computed.status }; const errors = validateTradeInput(tr); if (errors.length) return; try { const userId = (await supabase.auth.getUser()).data.user?.id; if (!userId) { setDbError('Not signed in.'); return; } const saved = await repo.saveTrade(userId, tr); setTrades((c) => [saved, ...c.filter((x) => x.id !== saved.id)]); setDraft({ ...createEmptyDraft(), id: 'draft' }); setScreen('Trade Log'); try { await saveAnalyticsSnapshot(userId, 'all', { expectancy: computeExpectancy([saved, ...trades]).expectancy }); } catch {} } catch (e) { setDbError('Failed to save trade. ' + String((e as any)?.message || e)); } }
+  async function saveDraftToRepo(t: Trade) { const computed = calculateTradeFinancials(t); const tr: Trade = { ...t, id: t.id && t.id !== 'draft' ? t.id : crypto.randomUUID(), createdAt: t.createdAt || new Date().toISOString(), ...(computed.status === 'closed' && !t.closedAt ? { closedAt: new Date().toISOString() } : {}), status: computed.status }; const errors = validateTradeInput(tr); if (errors.length) return; try { const userId = (await supabase.auth.getUser()).data.user?.id; if (!userId) { setDbError('Not signed in.'); return; } const saved = await repo.saveTrade(userId, tr); setTrades((c) => [saved, ...c.filter((x) => x.id !== saved.id)]); setDraft({ ...createEmptyDraft(), id: 'draft' }); setScreen('Trade Log'); try { await saveAnalyticsSnapshot(userId, 'all', { expectancy: computeExpectancy([saved, ...trades]).expectancy }); } catch {} } catch (e) { setDbError('Failed to save trade. ' + String((e as any)?.message || e)); } }
 
   function deleteTrade(id: string) { setDeleteConfirmId(id); }
   function cancelDelete() { setDeleteConfirmId(null); }
@@ -281,7 +281,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   async function setSellPrice(id: string, sellPrice: number) {
     const existing = trades.find((t) => t.id === id);
     if (!existing) return;
-    const closed: Trade = { ...existing, sellingPrice: sellPrice, status: 'closed', createdAt: existing.createdAt || new Date().toISOString() };
+    const closed: Trade = { ...existing, sellingPrice: sellPrice, status: 'closed', closedAt: new Date().toISOString(), createdAt: existing.createdAt || new Date().toISOString() };
     try {
       const userId = (await supabase.auth.getUser()).data.user?.id;
       if (!userId) return;
@@ -432,7 +432,7 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
       <Toggle label="Closing bell?" value={draft.closingBell ?? false} onChange={(v) => update({ closingBell: v })} />
       <Segment label="Day of week" value={draft.weekday ?? 'Mon'} options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri']} onChange={(v) => update({ weekday: v })} />
       <Segment label="VWAP direction" value={draft.vwapDirection ?? 'up'} options={['up', 'down']} onChange={(v) => update({ vwapDirection: (v === 'down' ? 'down' : 'up') as 'up' })} />
-      <Segment label="MACD trend" value={draft.macdTrend ?? 'raising'} options={['raising', 'falling']} onChange={(v) => update({ macdTrend: (v === 'falling' ? 'falling' : 'raising') as 'raising' })} />
+      <Segment label="MACD trend" value={draft.macdTrend ?? 'rising'} options={['rising', 'falling']} onChange={(v) => update({ macdTrend: (v === 'falling' ? 'falling' : 'rising') as 'rising' })} />
       <Field label="Trade time (12h, e.g. 3:45 PM)" value={draft.tradeTime ?? ''} placeholder="e.g. 3:45 PM" onChangeText={(v) => update({ tradeTime: v })} />
       <Segment label="Buying" value={draft.buyingType} options={['call', 'put']} onChange={(v) => update({ buyingType: v as Trade['buyingType'] })} />
       <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Math.max(1, Math.round(parseFloat(v) || 1)) })} />
@@ -588,7 +588,7 @@ function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof 
     a.href = url; a.download = `tradeos-trades-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
-  return <View style={styles.twoCol}><GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from closed trades.</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /><TouchableOpacity style={styles.secondaryButton} onPress={exportCsv}><Text style={styles.buttonText}>Export CSV ({trades.length})</Text></TouchableOpacity></GlassCard><GlassCard><Text style={styles.cardTitle}>Probability Snapshot</Text><Metric label="Overall win rate" value={formatPercent(overallWinRate)} /><Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} /><Metric label="Position size" value={sizing.recommendedRiskPercent > 0 ? `${sizing.recommendedRiskPercent.toFixed(1)}%` : '—'} /><Metric label="Recent form" value={`${formatPercent(form.recentWinRate)}`} /></GlassCard></View>;
+  return <View style={styles.twoCol}><GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from closed trades.</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="# Days Hold (avg)" value={String(averageDaysHeld(trades))} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /><TouchableOpacity style={styles.secondaryButton} onPress={exportCsv}><Text style={styles.buttonText}>Export CSV ({trades.length})</Text></TouchableOpacity></GlassCard><GlassCard><Text style={styles.cardTitle}>Probability Snapshot</Text><Metric label="Overall win rate" value={formatPercent(overallWinRate)} /><Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} /><Metric label="Position size" value={sizing.recommendedRiskPercent > 0 ? `${sizing.recommendedRiskPercent.toFixed(1)}%` : '—'} /><Metric label="Recent form" value={`${formatPercent(form.recentWinRate)}`} /></GlassCard></View>;
 }
 
 function Settings() { return <GlassCard><Text style={styles.cardTitle}>Settings / Rule Engine</Text><Metric label="Timezone" value={localDatabase.settings.timezone} /><Metric label="Market Open" value={localDatabase.settings.marketOpenTime} /><Metric label="Risk Limit" value={`${localDatabase.settings.riskLimitPercent}%`} /><Metric label="Portfolio" value={formatCurrency(localDatabase.settings.portfolioValue)} /></GlassCard>; }

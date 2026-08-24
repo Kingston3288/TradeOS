@@ -44,6 +44,7 @@ export function dbTradeToApp(row: DbTrade): Trade {
     weekday: (row.rule_checklist as any)?.weekday || undefined,
     vwapDirection: (row.rule_checklist as any)?.vwapDirection || undefined,
     macdTrend: (row.rule_checklist as any)?.macdTrend || undefined,
+    closedAt: (row.rule_checklist as any)?.closedAt || undefined,
     buyingType: direction,
     contractCount: Number(row.contracts),
     purchasePrice: Number(row.entry_price),
@@ -82,6 +83,7 @@ export function appTradeToDb(trade: Trade, userId: string): Omit<DbTrade, 'id' |
       weekday: trade.weekday || null,
       vwapDirection: trade.vwapDirection || null,
       macdTrend: trade.macdTrend || null,
+      closedAt: trade.closedAt || null,
     },
     screenshot_urls: trade.screenshotUrls || [],
   };

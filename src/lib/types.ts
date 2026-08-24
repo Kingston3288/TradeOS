@@ -31,10 +31,12 @@ export interface Trade {
   tradeTime?: string;
   /** day of week the trade was taken: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' */
   weekday?: string;
+  /** ISO timestamp when a closed trade was actually closed (set when sell price captured) */
+  closedAt?: string;
   /** VWAP position/direction: price vs VWAP */
   vwapDirection?: 'up' | 'down';
   /** MACD trend direction */
-  macdTrend?: 'raising' | 'falling';
+  macdTrend?: 'rising' | 'falling';
 }
 
 export interface Settings {
