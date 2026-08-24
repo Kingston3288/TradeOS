@@ -6,33 +6,32 @@
 <style>
 :root{--bg:#030611;--panel:rgba(13,22,42,.82);--line:rgba(255,255,255,.12);--text:#eff7ff;--muted:#8fa6c3;--green:#35ff9b;--red:#ff4d6d;--cyan:#45e5ff;--violet:#7b61ff}
 *{box-sizing:border-box;margin:0}
-body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:radial-gradient(circle at 15% 8%,rgba(123,97,255,.16),transparent 34vw),radial-gradient(circle at 85% 20%,rgba(69,229,255,.14),transparent 30vw),linear-gradient(180deg,#050817,#02040c);min-height:100vh}
-.wrap{max-width:1200px;margin:0 auto;padding:48px 28px 80px}
-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:48px}
+body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:radial-gradient(circle at 15% 2%,rgba(123,97,255,.16),transparent 30vw),radial-gradient(circle at 85% 18%,rgba(69,229,255,.13),transparent 28vw),linear-gradient(180deg,#050817,#02040c);min-height:100vh}
+.wrap{max-width:1160px;margin:0 auto;padding:44px 26px 80px}
+nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px}
 .brand{display:flex;align-items:center;gap:12px}
 .lm{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--violet));display:grid;place-items:center;font-weight:900;font-size:20px;color:#041018}
-.brand b{font-size:20px}
-.brand span{color:var(--muted);font-size:12px}
+.brand b{font-size:20px}.brand span{color:var(--muted);font-size:12px}
 nav a{color:var(--cyan);text-decoration:none;font-weight:700}
-h1{font-size:clamp(30px,5vw,52px);font-weight:900;background:linear-gradient(90deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;margin:8px 0 16px}
-.sub{color:var(--muted);font-size:17px;max-width:720px;line-height:1.6;margin-bottom:48px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:28px;align-items:start}
-@media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}
+h1{font-size:clamp(30px,5vw,48px);font-weight:900;background:linear-gradient(90deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;margin:6px 0 14px}
+.sub{color:var(--muted);font-size:16px;max-width:760px;line-height:1.6;margin-bottom:16px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 36px}
+.chip{padding:6px 14px;border-radius:99px;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:700}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:24px;backdrop-filter:blur(14px)}
-.card h2{font-size:14px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:6px}
-.card .label{font-size:22px;font-weight:900;margin-bottom:20px}
+.card h2{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:var(--cyan);margin-bottom:5px}
+.card .tag{font-size:21px;font-weight:900;margin-bottom:16px}
 .imgbox{border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#000}
 .imgbox img{display:block;width:100%;height:auto}
-.phone{max-width:340px;margin:0 auto}
-.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
-.badge{padding:5px 12px;border-radius:99px;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:700}
-.badge.green{color:var(--green);border-color:rgba(53,255,155,.4)}
-.badge.cyan{color:var(--cyan);border-color:rgba(69,229,255,.4)}
-.badge.violet{color:#c5b8ff;border-color:rgba(123,97,255,.5)}
-.animated{animation:float 5s ease-in-out infinite}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-.note{color:var(--muted);font-size:13px;margin-top:14px;line-height:1.6}
-.cta{display:inline-block;margin-top:8px;background:linear-gradient(135deg,var(--cyan),var(--violet));color:#041018;font-weight:900;padding:12px 22px;border-radius:14px;text-decoration:none}
+.desc{color:var(--muted);font-size:13px;margin-top:14px;line-height:1.6}
+.badge{display:inline-block;margin-top:13px;padding:5px 12px;border-radius:99px;font-size:12px;font-weight:800;background:rgba(53,255,156,.12);color:var(--green);border:1px solid rgba(53,255,156,.3)}
+.sec{display:grid;grid-template-columns:1fr;gap:22px}
+@media(min-width:900px){.sec.duo{grid-template-columns:1fr 1fr}}
+@media(min-width:1000px){.sec.trio{grid-template-columns:repeat(3,1fr)}}
+.phone .imgbox{max-width:320px;margin:0 auto}
+.anim{animation:float 5s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.cta{display:inline-block;background:linear-gradient(135deg,var(--cyan),var(--violet));color:#041018;font-weight:900;padding:13px 24px;border-radius:14px;text-decoration:none;margin-top:8px}
+.note{color:var(--muted);font-size:12px;line-height:1.6;margin-top:34px}
 </style></head><body>
 <div class="wrap">
   <nav>
@@ -41,26 +40,64 @@ h1{font-size:clamp(30px,5vw,52px);font-weight:900;background:linear-gradient(90d
   </nav>
 
   <h1>TradeOS — Product Mockups</h1>
-  <p class="sub">Premium, futuristic fintech design concept for the mobile app (iPhone 17) and the web platform. Dark navy palette, neon cyan + electric violet glassmorphism — same trade conditions (VWAP direction, MACD trend), probability engine, and win-rate analytics shown in the live product.</p>
+  <p class="sub">A complete premium, futuristic product concept: private-access marketing, login, dashboard, fast trade entry with a probability engine, deep win-rate analytics, and a swipe-to-edit trade log. Same dark-navy / neon-cyan / electric-violet glassmorphism system as the live app.</p>
+  <div class="legend"><span class="chip">Dashboard</span><span class="chip">Fast entry</span><span class="chip">Probability engine</span><span class="chip">VWAP &amp; MACD</span><span class="chip">Swipe to edit</span><span class="chip">Private access</span></div>
 
-  <div class="grid">
+  <!-- Web: Landing + Login -->
+  <div class="sec duo">
     <div class="card">
-      <h2>Mobile</h2>
-      <div class="label">TradeOS App · iPhone 17</div>
-      <div class="imgbox phone animated"><img src="iphone17.png" alt="TradeOS iPhone 17 mobile mockup"/></div>
-      <div class="badges"><span class="badge green">Probability engine</span><span class="badge cyan">Live P/L chart</span><span class="badge violet">VWAP + MACD</span></div>
-      <p class="note">Dashboard KPIs, cumulative P/L line chart, New Trade entry with VWAP/MACD conditions, and the predicted-success popup.</p>
+      <h2>Web · Marketing</h2>
+      <div class="tag">TradeOS Landing</div>
+      <div class="imgbox anim"><img src="website.png" alt="TradeOS marketing landing page"/></div>
+      <p class="desc">Hero, features, and CTA to open the app — "use this app to reach your first million." Understated and premium, built for sophisticated owners.</p>
+      <span class="badge">Live at tradeos.win</span>
     </div>
-
     <div class="card">
-      <h2>Website</h2>
-      <div class="label">TradeOS Web Platform</div>
-      <div class="imgbox animated"><img src="website.png" alt="TradeOS website mockup"/></div>
-      <div class="badges"><span class="badge green">Win-rate analytics</span><span class="badge cyan">CLI dashboard</span><span class="badge violet">Private beta</span></div>
-      <p class="note">Marketing + command-center: sidebar nav, hero CTA, analytics with day-of-week bars and condition probability.</p>
-      <a class="cta" href="https://tradeos.win" style="margin-top:20px">Open live product</a>
+      <h2>Web · Access</h2>
+      <div class="tag">Login / Private Gate</div>
+      <div class="imgbox anim"><img src="login.png" alt="TradeOS login / access gate"/></div>
+      <p class="desc">Email + password with forgot-password and a "request access" path for the private beta. Signup stays off — the owner creates approved users.</p>
+      <span class="badge">Private access · admin-created users</span>
     </div>
   </div>
-  <p class="note" style="margin-top:32px">Concept renderings generated with AI to explore the premium direction — the running product at tradeos.win implements the same visual system and functionality live.</p>
+
+  <!-- Mobile: Dashboard + New Trade -->
+  <div class="sec duo">
+    <div class="card phone">
+      <h2>Mobile · iPhone 17</h2>
+      <div class="tag">Dashboard</div>
+      <div class="imgbox phone anim"><img src="iphone17.png" alt="TradeOS iPhone 17 dashboard"/></div>
+      <p class="desc">KPI cards (Daily P/L, Win Rate), cumulative-P/L line chart, and rule-discipline score in one glance.</p>
+      <span class="badge">Command center</span>
+    </div>
+    <div class="card phone">
+      <h2>Mobile · Entry Flow</h2>
+      <div class="tag">New Trade + Probability</div>
+      <div class="imgbox phone anim"><img src="newtrade.png" alt="TradeOS new trade entry with probability popup"/></div>
+      <p class="desc">Fast entry with VWAP/MACD toggles and the animated "predicted success %" confirmation popup before saving.</p>
+      <span class="badge">Probability engine</span>
+    </div>
+  </div>
+
+  <!-- Web: Analytics | Mobile: Trade Log -->
+  <div class="sec duo">
+    <div class="card">
+      <h2>Web · Intelligence</h2>
+      <div class="tag">Analytics / Probability Engine</div>
+      <div class="imgbox anim"><img src="analytics.png" alt="TradeOS analytics probability engine"/></div>
+      <p class="desc">Combo ranking best→least with win/loss %, Win Rate by Day of Week, and MACD / VWAP condition probabilities.</p>
+      <span class="badge">Higher-probability wins</span>
+    </div>
+    <div class="card phone">
+      <h2>Mobile · Journal</h2>
+      <div class="tag">Trade Log + Edit</div>
+      <div class="imgbox phone anim"><img src="tradelog.png" alt="TradeOS trade log with results chart and swipe edit"/></div>
+      <p class="desc">Results-trend line chart, per-trade buy/sell/date, and swipe-left to reveal the Edit (pen) action — edit symbol &amp; prices.</p>
+      <span class="badge">Swipe to edit</span>
+    </div>
+  </div>
+
+  <a class="cta" href="https://tradeos.win" >Open live product</a>
+  <p class="note">Concept renderings generated with AI (Higgsfield) to explore the premium direction — the running product at tradeos.win implements the same visual system and functionality live.</p>
 </div>
 </body></html>
