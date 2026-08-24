@@ -3,11 +3,12 @@ import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
 import { analyzeAllConditions, buildDashboardStats, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm } from './src/lib/analytics';
-import { localDatabase } from './src/lib/storage';
+import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
 import { colors, shadow } from './src/theme';
 import { supabase, checkApprovedStatus, OWNER_EMAIL } from './src/lib/supabase';
+import { createSupabaseTradeRepository, saveAnalyticsSnapshot } from './src/lib/supabaseTradeRepository';
 
 type Screen = 'Dashboard' | 'New Trade' | 'Trade Log' | 'Analytics' | 'Reports' | 'Settings';
 type AccessState = 'checking' | 'approved' | 'pending' | 'denied';
@@ -195,22 +196,68 @@ function AccessGate({ email, state, onSignOut }: { email: string; state: AccessS
   );
 }
 
+function prepareDraft(): Trade {
+  return createTradeDraft();
+}
+function createEmptyDraft(): Trade {
+  return createTradeDraft();
+}
+
 function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: () => void }) {
   const isOwner = (ownerEmail || '').toLowerCase() === OWNER_EMAIL.toLowerCase();
   const [screen, setScreen] = useState<Screen>('Dashboard');
-  const [trades, setTrades] = useState<Trade[]>(localDatabase.trades);
-  const [draft, setDraft] = useState<Trade>(() => ({ ...localDatabase.trades[0]!, id: 'draft', sellingPrice: null, status: 'open', notes: '' }));
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [draft, setDraft] = useState<Trade>(() => ({ ...prepareDraft(), id: 'draft', sellingPrice: null, status: 'open', notes: '' }));
+  const [dbError, setDbError] = useState('');
+  const repo = useMemo(() => createSupabaseTradeRepository(), []);
   const { width } = useWindowDimensions();
   const compact = width < 780;
-  const stats = useMemo(() => buildDashboardStats(trades, '2026-08-13'), [trades]);
+  const stats = useMemo(() => buildDashboardStats(trades, new Date().toISOString().slice(0, 10)), [trades]);
   const analyses = useMemo(() => analyzeAllConditions(trades), [trades]);
 
-  function saveDraft() {
+  // Load trades from Supabase once the user's session is approved (ownerEmail is set).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const userId = (await supabase.auth.getUser()).data.user?.id;
+        if (!userId) return;
+        const loaded = await repo.listTrades(userId);
+        if (alive) setTrades(loaded);
+      } catch (e) {
+        if (alive) setDbError('Could not load trades from database. ' + String((e as any)?.message || e));
+      }
+    })();
+    return () => { alive = false; };
+  }, [repo]);
+
+  async function saveDraft() {
     const computed = calculateTradeFinancials(draft);
-    const nextTrade: Trade = { ...draft, id: `t-${Date.now()}`, status: computed.status };
+    const nextTrade: Trade = { ...draft, id: draft.id && draft.id !== 'draft' ? draft.id : `t-${Date.now()}`, createdAt: draft.createdAt || new Date().toISOString(), status: computed.status };
     const errors = validateTradeInput(nextTrade);
     if (errors.length) return;
-    setTrades((current) => [nextTrade, ...current]);
+    try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      if (!userId) { setDbError('Not signed in.'); return; }
+      const saved = await repo.saveTrade(userId, nextTrade);
+      setTrades((current) => [saved, ...current.filter((t) => t.id !== saved.id)]);
+      setDraft({ ...createEmptyDraft(), id: 'draft' });
+      // Snapshot key analytics after each save (best-effort)
+      try { await saveAnalyticsSnapshot(userId, 'all', { expectancy: computeExpectancy([saved, ...trades]).expectancy, recordedAt: new Date().toISOString() }); } catch {}
+    } catch (e) {
+      setDbError('Failed to save trade. ' + String((e as any)?.message || e));
+    }
+  }
+
+  async function deleteTrade(id: string) {
+    try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      if (!userId) return;
+      await repo.deleteTrade(userId, id);
+      setTrades((current) => current.filter((t) => t.id !== id));
+    } catch (e) {
+      setDbError('Failed to delete trade. ' + String((e as any)?.message || e));
+    }
   }
 
   return (
@@ -254,10 +301,11 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 
           {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} />}
           {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} saveDraft={saveDraft} />}
-          {screen === 'Trade Log' && <TradeLog trades={trades} />}
+          {screen === 'Trade Log' && <TradeLog trades={trades} onDelete={deleteTrade} />}
           {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} trades={trades} />}
           {screen === 'Reports' && <Reports trades={trades} stats={stats} />}
           {screen === 'Settings' && <Settings />}
+          {!!dbError && <Text style={styles.error}>{dbError}</Text>}
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -310,8 +358,8 @@ function NewTrade({ draft, setDraft, saveDraft }: { draft: Trade; setDraft: (t: 
   </GlassCard>;
 }
 
-function TradeLog({ trades }: { trades: Trade[] }) {
-  return <GlassCard><Text style={styles.cardTitle}>Trade Log</Text>{trades.map((trade) => { const f = calculateTradeFinancials(trade); return <View key={trade.id} style={styles.tradeRow}><View><Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text><Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text></View><Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text></View>; })}</GlassCard>;
+function TradeLog({ trades, onDelete }: { trades: Trade[]; onDelete: (id: string) => void }) {
+  return <GlassCard><Text style={styles.cardTitle}>Trade Log</Text>{trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}{trades.map((trade) => { const f = calculateTradeFinancials(trade); return <View key={trade.id} style={styles.tradeRow}><View style={{ flex: 1 }}><Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text><Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text></View><Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text><TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity></View>; })}</GlassCard>;
 }
 
 function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof analyzeAllConditions>; stats: ReturnType<typeof buildDashboardStats>; trades: Trade[] }) {
