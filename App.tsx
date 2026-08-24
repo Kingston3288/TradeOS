@@ -384,8 +384,14 @@ function Dashboard({ stats, compact }: { stats: ReturnType<typeof buildDashboard
 function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; setDraft: (t: Trade) => void; trades: Trade[]; onSaveAttempt: (t: Trade) => void }) {
   const financials = calculateTradeFinancials(draft);
   const errors = validateTradeInput(draft);
-  const update = (patch: Partial<Trade>) => setDraft({ ...draft, ...patch });
+  const [touched, setTouched] = React.useState(false);
+  // Clear error state when the form is reset to a pristine new draft (e.g. after a successful save).
+  React.useEffect(() => {
+    if (draft.purchasePrice === 0 && !draft.symbol) setTouched(false);
+  }, [draft.purchasePrice, draft.symbol]);
+  const update = (patch: Partial<Trade>) => { setTouched(true); setDraft({ ...draft, ...patch }); };
   const best = bestRecommendedSetup(trades);
+  const showErrors = touched && errors.length > 0;
   return <GlassCard>
     <Text style={styles.cardTitle}>New Trade Entry</Text>
     {best && (
@@ -411,7 +417,7 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
       <MoneyField label="Selling Price ($)" initial={draft.sellingPrice} placeholder="e.g. 3.25" allowNull onChange={(n) => update({ sellingPrice: n })} />
     </View>
     <View style={styles.resultBox}><Text style={styles.mutedSmall}>Auto Result</Text><Text style={[styles.resultText, { color: financials.result === 'loss' ? colors.red : financials.result === 'open' ? colors.yellow : colors.green }]}>{financials.result === 'open' ? 'Open trade' : `${formatCurrency(financials.netProfitLoss ?? 0)} · ${(financials.profitLossPercentage ?? 0).toFixed(1)}%`}</Text></View>
-    {errors.map((e) => <Text key={e} style={styles.error}>{e}</Text>)}
+    {errors.length > 0 && touched && errors.slice(0, 1).map((e) => <Text key={e} style={styles.error}>{e}</Text>)}
     <TouchableOpacity style={styles.primaryButton} onPress={() => onSaveAttempt(draft)}><Text style={styles.primaryText}>Save Trade + Update Dashboard</Text></TouchableOpacity>
   </GlassCard>;
 }
