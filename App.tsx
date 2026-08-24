@@ -370,12 +370,11 @@ function NewTrade({ draft, setDraft, saveDraft, trades }: { draft: Trade; setDra
       <Toggle label="9 or 14 EMA crossed?" value={draft.emaCrossed} onChange={(v) => update({ emaCrossed: v })} />
       <Toggle label="Within 25% portfolio?" value={draft.withinPortfolioRiskLimit} onChange={(v) => update({ withinPortfolioRiskLimit: v })} />
       <Toggle label="Closing bell?" value={draft.closingBell ?? false} onChange={(v) => update({ closingBell: v })} />
-      <Segment label="Market" value={draft.marketExcitement} options={['up', 'down', 'neutral']} onChange={(v) => update({ marketExcitement: v as Trade['marketExcitement'] })} />
-      <Field label="Trade time (HH:MM)" value={draft.tradeTime ?? ''} placeholder="e.g. 15:45" onChangeText={(v) => update({ tradeTime: v })} />
+      <Field label="Trade time (12h, e.g. 3:45 PM)" value={draft.tradeTime ?? ''} placeholder="e.g. 3:45 PM" onChangeText={(v) => update({ tradeTime: v })} />
       <Segment label="Buying" value={draft.buyingType} options={['call', 'put']} onChange={(v) => update({ buyingType: v as Trade['buyingType'] })} />
-      <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Number(v) || 0 })} />
-      <Field label="Purchase Price" value={String(draft.purchasePrice)} keyboardType="numeric" onChangeText={(v) => update({ purchasePrice: Number(v) || 0 })} />
-      <Field label="Selling Price" value={draft.sellingPrice === null ? '' : String(draft.sellingPrice)} keyboardType="numeric" onChangeText={(v) => update({ sellingPrice: v === '' ? null : Number(v) || 0 })} />
+      <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Math.max(1, Math.round(parseFloat(v) || 1)) })} />
+      <Field label="Purchase Price ($)" value={draft.purchasePrice > 0 ? String(draft.purchasePrice) : ''} keyboardType="decimal-pad" placeholder="e.g. 2.50" onChangeText={(v) => update({ purchasePrice: parseFloat(v) || 0 })} />
+      <Field label="Selling Price ($)" value={draft.sellingPrice === null || draft.sellingPrice === 0 ? '' : String(draft.sellingPrice)} keyboardType="decimal-pad" placeholder="e.g. 3.25" onChangeText={(v) => update({ sellingPrice: v === '' ? null : parseFloat(v) || 0 })} />
     </View>
     <View style={styles.resultBox}><Text style={styles.mutedSmall}>Auto Result</Text><Text style={[styles.resultText, { color: financials.result === 'loss' ? colors.red : financials.result === 'open' ? colors.yellow : colors.green }]}>{financials.result === 'open' ? 'Open trade' : `${formatCurrency(financials.netProfitLoss ?? 0)} · ${(financials.profitLossPercentage ?? 0).toFixed(1)}%`}</Text></View>
     {errors.map((e) => <Text key={e} style={styles.error}>{e}</Text>)}

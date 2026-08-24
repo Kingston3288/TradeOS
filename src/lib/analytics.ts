@@ -358,6 +358,28 @@ export function bestRecommendedSetup(trades: Trade[]): { label: string; winRate:
   return { label: top.label, winRate: top.winRate, sampleSize: top.sampleSize, conditions: top.conditions };
 }
 
+/** Parse a trade time string ("3:45 PM", "15:45", "3:45pm") into a 24h hour (0-23), or -1 if invalid. */
+export function parseTradeTimeToHour(tm?: string): number {
+  if (!tm) return -1;
+  const m = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/i.exec(tm.trim());
+  if (!m || !m[1] || !m[2]) return -1;
+  const hour0 = parseInt(m[1], 10);
+  const minute = parseInt(m[2], 10);
+  if (minute < 0 || minute > 59) return -1;
+  const meridiem = (m[3] || '').toLowerCase();
+  let hour = hour0;
+  if (meridiem) {
+    // 12h with AM/PM
+    if (hour0 < 1 || hour0 > 12) return -1;
+    if (meridiem === 'pm' && hour !== 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+  } else {
+    // 24h (no meridiem): allow 0-23
+    if (hour0 > 23) return -1;
+  }
+  return hour;
+}
+
 export interface TimeOfDayStat {
   hour: number; // 0-23
   label: string; // e.g. "9:00-10:00"
@@ -371,10 +393,8 @@ export function winRateByTimeOfDay(trades: Trade[]): TimeOfDayStat[] {
   const closed = closedTrades(trades);
   const byHour = new Map<number, Trade[]>();
   for (const t of closed) {
-    const tm = t.tradeTime; // "HH:MM"
-    if (!tm) continue;
-    const h = parseInt(tm.slice(0, 2), 10);
-    if (isNaN(h)) continue;
+    const h = parseTradeTimeToHour(t.tradeTime);
+    if (h < 0) continue;
     byHour.set(h, [...(byHour.get(h) ?? []), t]);
   }
   const rows: TimeOfDayStat[] = [];

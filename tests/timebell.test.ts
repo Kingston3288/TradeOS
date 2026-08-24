@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeAllConditions, winRateByTimeOfDay } from '../src/lib/analytics';
+import { analyzeAllConditions, parseTradeTimeToHour, winRateByTimeOfDay } from '../src/lib/analytics';
 import type { Trade } from '../src/lib/types';
 
 function trade(over: Partial<Trade>): Trade {
@@ -49,5 +49,23 @@ describe('winRateByTimeOfDay', () => {
   it('ignores trades without a time', () => {
     const rows = winRateByTimeOfDay([trade({})]);
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('parseTradeTimeToHour', () => {
+  it('parses 12h AM/PM and 24h formats', () => {
+    expect(parseTradeTimeToHour('3:45 PM')).toBe(15);
+    expect(parseTradeTimeToHour('9:30 AM')).toBe(9);
+    expect(parseTradeTimeToHour('12:00 PM')).toBe(12);
+    expect(parseTradeTimeToHour('12:15 AM')).toBe(0);
+    expect(parseTradeTimeToHour('15:45')).toBe(15);
+    expect(parseTradeTimeToHour('09:05')).toBe(9);
+    expect(parseTradeTimeToHour('3:45pm')).toBe(15);
+  });
+  it('returns -1 for invalid', () => {
+    expect(parseTradeTimeToHour(undefined)).toBe(-1);
+    expect(parseTradeTimeToHour('bad')).toBe(-1);
+    expect(parseTradeTimeToHour('25:00')).toBe(-1);
+    expect(parseTradeTimeToHour('')).toBe(-1);
   });
 });
