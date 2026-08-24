@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, buildDashboardStats, calculateTradeFinancials, formatCurrency, formatPercent } from './src/lib/analytics';
+import { analyzeAllConditions, buildDashboardStats, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm } from './src/lib/analytics';
 import { localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -255,7 +255,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
           {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} />}
           {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} saveDraft={saveDraft} />}
           {screen === 'Trade Log' && <TradeLog trades={trades} />}
-          {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} />}
+          {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} trades={trades} />}
           {screen === 'Reports' && <Reports trades={trades} stats={stats} />}
           {screen === 'Settings' && <Settings />}
         </ScrollView>
@@ -314,12 +314,45 @@ function TradeLog({ trades }: { trades: Trade[] }) {
   return <GlassCard><Text style={styles.cardTitle}>Trade Log</Text>{trades.map((trade) => { const f = calculateTradeFinancials(trade); return <View key={trade.id} style={styles.tradeRow}><View><Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text><Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text></View><Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text></View>; })}</GlassCard>;
 }
 
-function Analytics({ analyses, stats }: { analyses: ReturnType<typeof analyzeAllConditions>; stats: ReturnType<typeof buildDashboardStats> }) {
-  return <View style={styles.twoCol}>{analyses.map((a) => <GlassCard key={String(a.key)}><Text style={styles.cardTitle}>{a.label}</Text><Metric label="True win rate" value={`${formatPercent(a.trueWinRate)} · n=${a.trueSampleSize}`} /><Metric label="False win rate" value={`${formatPercent(a.falseWinRate)} · n=${a.falseSampleSize}`} /><Metric label="Win lift" value={`${(a.winLift * 100).toFixed(0)} pts`} /><Metric label="Avg P/L true" value={formatCurrency(a.trueAverageProfitLoss)} /></GlassCard>)}<GlassCard><Text style={styles.cardTitle}>Best Pattern</Text><Text style={styles.muted}>{stats.bestSetupPattern?.label}</Text><Metric label="Sample" value={`n=${stats.bestSetupPattern?.sampleSize ?? 0}`} /></GlassCard><GlassCard><Text style={styles.cardTitle}>Worst Pattern</Text><Text style={styles.muted}>{stats.worstSetupPattern?.label}</Text><Metric label="Sample" value={`n=${stats.worstSetupPattern?.sampleSize ?? 0}`} /></GlassCard></View>;
+function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof analyzeAllConditions>; stats: ReturnType<typeof buildDashboardStats>; trades: Trade[] }) {
+  const { setups, overallWinRate } = findHighProbabilitySetups(trades, 3);
+  const expectancy = computeExpectancy(trades);
+  const sizing = computePositionSizing(trades, localDatabase.settings.riskLimitPercent);
+  const form = recentForm(trades, 20);
+  return <View style={styles.twoCol}>
+    {/* Higher-probability set-ups, most important */}
+    <GlassCard><Text style={styles.cardTitle}>High-Probability Setups</Text>
+      <Metric label="Overall win rate" value={`${formatPercent(overallWinRate)}`} />
+      {setups.length === 0 && <Text style={styles.muted}>Log more closed trades (min 3 per setup) to surface the highest-probability combos.</Text>}
+      {setups.slice(0, 4).map((s) => <View key={s.label} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.sampleSize}</Text></View>)}
+    </GlassCard>
+    {/* Edge metrics */}
+    <GlassCard><Text style={styles.cardTitle}>Edge & Edge Sizing</Text>
+      <Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} />
+      <Metric label="Profit factor" value={expectancy.profitFactor === Infinity ? '∞' : expectancy.profitFactor.toFixed(2)} />
+      <Metric label="Payoff ratio" value={expectancy.payoffRatio.toFixed(2)} />
+      <Metric label="Recent form (last 20)" value={`${formatPercent(form.recentWinRate)} vs ${formatPercent(form.overallWinRate)}`} />
+      <Text style={styles.mutedSmall}>{sizing.message}</Text>
+    </GlassCard>
+    {/* per-symbol */}
+    <GlassCard><Text style={styles.cardTitle}>Edge by Symbol</Text>
+      {breakDownBySymbol(trades).slice(0, 6).map((s) => <View key={s.symbol} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.symbol}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · {s.trades} trades</Text></View>)}
+    </GlassCard>
+    {/* per-strategy */}
+    <GlassCard><Text style={styles.cardTitle}>Edge by Strategy</Text>
+      {breakDownByStrategy(trades).slice(0, 6).map((s) => <View key={s.tag} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.tag}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+    </GlassCard>
+    {/* legacy condition cards */}
+    <GlassCard><Text style={styles.cardTitle}>Single-Condition Lift</Text>{analyses.slice(0, 3).map((a) => <View key={String(a.key)} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{a.label}</Text><Text style={styles.metricValue}>{formatPercent(a.trueWinRate)} · +{(a.winLift * 100).toFixed(0)}pts</Text></View>)}</GlassCard>
+  </View>;
 }
 
-function Reports({ stats }: { trades: Trade[]; stats: ReturnType<typeof buildDashboardStats> }) {
-  return <GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from closed trades.</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /><TouchableOpacity style={styles.secondaryButton}><Text style={styles.buttonText}>Export CSV</Text></TouchableOpacity></GlassCard>;
+function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof buildDashboardStats> }) {
+  const expectancy = computeExpectancy(trades);
+  const sizing = computePositionSizing(trades, localDatabase.settings.riskLimitPercent);
+  const { setups, overallWinRate } = findHighProbabilitySetups(trades, 3);
+  const form = recentForm(trades, 20);
+  return <View style={styles.twoCol}><GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from closed trades.</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /></GlassCard><GlassCard><Text style={styles.cardTitle}>Probability Snapshot</Text><Metric label="Overall win rate" value={formatPercent(overallWinRate)} /><Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} /><Metric label="Position size" value={sizing.recommendedRiskPercent > 0 ? `${sizing.recommendedRiskPercent.toFixed(1)}%` : '—'} /><Metric label="Recent form" value={`${formatPercent(form.recentWinRate)}`} /><TouchableOpacity style={styles.secondaryButton}><Text style={styles.buttonText}>Export CSV</Text></TouchableOpacity></GlassCard></View>;
 }
 
 function Settings() { return <GlassCard><Text style={styles.cardTitle}>Settings / Rule Engine</Text><Metric label="Timezone" value={localDatabase.settings.timezone} /><Metric label="Market Open" value={localDatabase.settings.marketOpenTime} /><Metric label="Risk Limit" value={`${localDatabase.settings.riskLimitPercent}%`} /><Metric label="Portfolio" value={formatCurrency(localDatabase.settings.portfolioValue)} /></GlassCard>; }

@@ -78,3 +78,45 @@ export interface SetupPattern {
   averageProfitLoss: number;
   sampleSize: number;
 }
+
+export type ConditionKey = 'fifteenMinutesPassed' | 'entryRespectsFifteenMinuteHighLow' | 'emaCrossed' | 'withinPortfolioRiskLimit';
+
+export interface CombinedSetup {
+  /** Which conditions were true for this setup, e.g. ['15m passed','EMA confirmed'] */
+  conditions: string[];
+  winRate: number;
+  averageProfitLoss: number;
+  sampleSize: number;
+  /** Compatible with SetupPattern for reuse */
+  label: string;
+}
+
+export interface ExpectancyMetrics {
+  expectancy: number;        // average net P/L per closed trade
+  profitFactor: number;      // gross wins / gross losses (1 = breakeven)
+  payoffRatio: number;       // avg win / avg loss (abs)
+  winRate: number;
+  totalClosed: number;
+}
+
+export interface PositionSizing {
+  kellyFraction: number;     // raw Kelly (capped)
+  recommendedRiskPercent: number; // conservative fraction of Kelly (half-Kelly)
+  edgePresent: boolean;
+  message: string;
+}
+
+export interface SymbolBreakdown {
+  symbol: string;
+  trades: number;
+  winRate: number;
+  netProfitLoss: number;
+  avgProfitLoss: number;
+}
+
+export interface StrategyBreakdown {
+  tag: string;
+  trades: number;
+  winRate: number;
+  netProfitLoss: number;
+}

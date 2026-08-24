@@ -1,4 +1,4 @@
-import { ConditionAnalysis, PeriodStats, SetupPattern, Trade, TradeFinancials } from './types';
+import { ConditionAnalysis, CombinedSetup, ConditionKey, ExpectancyMetrics, PeriodStats, PositionSizing, SetupPattern, StrategyBreakdown, SymbolBreakdown, Trade, TradeFinancials } from './types';
 
 const CONTRACT_MULTIPLIER = 100;
 const CONDITION_KEYS: Array<{ key: keyof Trade; label: string }> = [
@@ -173,4 +173,155 @@ export function formatCurrency(value: number, currency = 'USD'): string {
 
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(0)}%`;
+}
+
+// ============ Higher-probability analytics ============
+
+const CONDITION_LABELS: Record<ConditionKey, string> = {
+  fifteenMinutesPassed: '15m passed',
+  entryRespectsFifteenMinuteHighLow: '15m HL respected',
+  emaCrossed: 'EMA confirmed',
+  withinPortfolioRiskLimit: 'Within risk',
+};
+
+const CONDITION_KEYS_TYPED: ConditionKey[] = [
+  'fifteenMinutesPassed',
+  'entryRespectsFifteenMinuteHighLow',
+  'emaCrossed',
+  'withinPortfolioRiskLimit',
+];
+
+/**
+ * Combined-condition engine: computes the win rate for every combination of
+ * the boolean conditions (2^n combos), filtered to require a minimum sample size.
+ * Ranked so the trader sees which condition baskets actually deliver higher
+ * probability wins — not single-checkbox noise.
+ */
+export function findHighProbabilitySetups(
+  trades: Trade[],
+  minSampleSize = 3,
+): { setups: CombinedSetup[]; overallWinRate: number } {
+  const closed = closedTrades(trades);
+  const overallWinRate = winRate(closed);
+  const n = CONDITION_KEYS_TYPED.length;
+  const combos: CombinedSetup[] = [];
+
+  for (let mask = 0; mask < (1 << n); mask++) {
+    const conditions = CONDITION_KEYS_TYPED.filter((_, i) => mask & (1 << i));
+    // skip the "none" empty combination
+    if (conditions.length === 0) continue;
+
+    const matched = closed.filter((t) => conditions.every((c) => Boolean(t[c])));
+    if (matched.length === 0 || matched.length < minSampleSize) continue;
+
+    combos.push({
+      conditions: conditions.map((c) => CONDITION_LABELS[c]),
+      label: conditions.map((c) => CONDITION_LABELS[c]).join(' + '),
+      winRate: winRate(matched),
+      averageProfitLoss: average(matched.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0)),
+      sampleSize: matched.length,
+    });
+  }
+
+  // Rank by win rate, then avg P/L, then sample size
+  combos.sort((a, b) => b.winRate - a.winRate || b.averageProfitLoss - a.averageProfitLoss || b.sampleSize - a.sampleSize);
+  return { setups: combos, overallWinRate };
+}
+
+/** Expectancy (EV per trade) + profit factor + payoff ratio. */
+export function computeExpectancy(trades: Trade[]): ExpectancyMetrics {
+  const closed = closedTrades(trades);
+  const results = closed.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0);
+  const wins = results.filter((v) => v > 0);
+  const losses = results.filter((v) => v < 0);
+  const grossWin = wins.reduce((s, v) => s + v, 0);
+  const grossLoss = Math.abs(losses.reduce((s, v) => s + v, 0));
+  const avgWin = average(wins);
+  const avgLoss = average(losses.map((v) => Math.abs(v)));
+
+  return {
+    expectancy: results.length ? results.reduce((s, v) => s + v, 0) / results.length : 0,
+    profitFactor: grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? Infinity : 0,
+    payoffRatio: avgLoss > 0 ? avgWin / avgLoss : 0,
+    winRate: winRate(closed),
+    totalClosed: closed.length,
+  };
+}
+
+/**
+ * Kelly / position sizing recommendation.
+ * Recommended risk = half-Kelly (conservative), converted to % of portfolio.
+ * Kelly = p - (1-p)/b, where p = winRate, b = payoff ratio.
+ */
+export function computePositionSizing(trades: Trade[], riskLimitPercent = 25): PositionSizing {
+  const { winRate: p, payoffRatio: b } = computeExpectancy(trades);
+  if (p <= 0 || b <= 0) {
+    return { kellyFraction: 0, recommendedRiskPercent: 0, edgePresent: false, message: 'Not enough data to size positions yet.' };
+  }
+  const kelly = p - (1 - p) / b;
+  if (kelly <= 0) {
+    return { kellyFraction: 0, recommendedRiskPercent: 0, edgePresent: false, message: 'No positive edge detected — reduce or pause size until win rate/expecitancy improves.' };
+  }
+  // Half-Kelly, capped at the user's portfolio risk limit %, and never absurdly high.
+  const halfKelly = kelly / 2;
+  const recommended = Math.max(0.01, Math.min(halfKelly, riskLimitPercent / 100));
+  return {
+    kellyFraction: kelly,
+    recommendedRiskPercent: recommended * 100,
+    edgePresent: true,
+    message: `Risk up to ~${(recommended * 100).toFixed(1)}% of portfolio per trade on this edge.`,
+  };
+}
+
+/** Per-symbol breakdown. */
+export function breakDownBySymbol(trades: Trade[]): SymbolBreakdown[] {
+  const closed = closedTrades(trades);
+  const bySymbol = new Map<string, Trade[]>();
+  for (const t of closed) {
+    const s = (t.symbol || '—').toUpperCase();
+    bySymbol.set(s, [...(bySymbol.get(s) ?? []), t]);
+  }
+  const rows = [...bySymbol.entries()].map(([symbol, group]) => {
+    const results = group.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0);
+    return {
+      symbol,
+      trades: group.length,
+      winRate: winRate(group),
+      netProfitLoss: results.reduce((s, v) => s + v, 0),
+      avgProfitLoss: average(results),
+    };
+  });
+  return rows.sort((a, b) => b.trades - a.trades);
+}
+
+/** Per-strategy (strategyTag / notes tag) breakdown. */
+export function breakDownByStrategy(trades: Trade[]): StrategyBreakdown[] {
+  const closed = closedTrades(trades);
+  const byTag = new Map<string, Trade[]>();
+  for (const t of closed) {
+    const tag = (t.strategyTag || 'untagged').trim();
+    byTag.set(tag, [...(byTag.get(tag) ?? []), t]);
+  }
+  const rows = [...byTag.entries()].map(([tag, group]) => {
+    const results = group.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0);
+    return {
+      tag,
+      trades: group.length,
+      winRate: winRate(group),
+      netProfitLoss: results.reduce((s, v) => s + v, 0),
+    };
+  });
+  return rows.sort((a, b) => b.trades - a.trades);
+}
+
+/** Rolling recent-form: win rate over the last N closed trades vs overall. */
+export function recentForm(trades: Trade[], lookback = 20): { recentWinRate: number; overallWinRate: number; recentCount: number } {
+  const closed = closedTrades(trades);
+  // closed list is in insertion order; take the last N
+  const recent = closed.slice(-lookback);
+  return {
+    recentWinRate: winRate(recent),
+    overallWinRate: winRate(closed),
+    recentCount: recent.length,
+  };
 }
