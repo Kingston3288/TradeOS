@@ -631,7 +631,23 @@ function EditTradeModal({ trade, onClose, onSave }: { trade: Trade | null; onClo
   );
 }
 function GlassCard({ children }: { children: React.ReactNode }) { return <View style={styles.card}>{children}</View>; }
-function Kpi({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'green' | 'red' | 'cyan' | 'yellow' }) { return <GlassCard><Text style={styles.mutedSmall}>{label}</Text><Text style={[styles.kpiValue, { color: colors[tone] }]}>{value}</Text><Text style={styles.mutedSmall}>{detail}</Text></GlassCard>; }
+function Kpi({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'green' | 'red' | 'cyan' | 'yellow' }) { return <GlassCard><Text style={styles.mutedSmall}>{label}</Text><CountUp value={value} color={colors[tone]} /><Text style={styles.mutedSmall}>{detail}</Text></GlassCard>; }
+
+function CountUp({ value, color }: { value: string; color: string }) {
+  const target = (() => { const n = parseFloat(value.replace(/[$,%]/g, '')); return isNaN(n) ? 0 : n; })();
+  const [cur, setCur] = useState(0);
+  useEffect(() => {
+    let raf = 0; const start = performance.now(); const dur = 900;
+    const step = (t: number) => { const p = Math.min(1, (t - start) / dur); const eased = 1 - Math.pow(1 - p, 3); setCur(Math.round(target * eased)); if (p < 1) raf = requestAnimationFrame(step); };
+    raf = requestAnimationFrame(step);
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  }, [target]);
+  // Preserve formatting: currency/percent based on the original value string.
+  const prefix = value.startsWith('$') ? '$' : '';
+  const suffix = value.endsWith('%') ? '%' : '';
+  const formatted = target >= 1000 && !value.includes('%') ? cur.toLocaleString('en-US') : String(cur);
+  return <Text style={[styles.kpiValue, { color }]}>{prefix}{formatted}{suffix}</Text>;
+}
 
 function ResultLineChart({ results }: { results: { id: string; symbol: string; net: number; date: string; open: boolean }[] }) {
   const W = 560, H = 180, PAD = 28;
