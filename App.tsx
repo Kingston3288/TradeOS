@@ -265,7 +265,14 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 }
 
 function Dashboard({ stats, compact }: { stats: ReturnType<typeof buildDashboardStats>; compact: boolean }) {
+  const hasTrades = (stats.daily.totalTrades || stats.weekly.totalTrades || stats.monthly.totalTrades) > 0;
   return <View>
+    {!hasTrades && (
+      <View style={[styles.card, { marginBottom: 16 }]}>
+        <Text style={styles.cardTitle}>Welcome — no trades yet</Text>
+        <Text style={[styles.muted, { marginTop: 6 }]}>Your dashboard is clean. Log your first trade to start building your journal and analytics. Head to "New Trade" to get started.</Text>
+      </View>
+    )}
     <View style={[styles.kpiGrid, compact && styles.oneCol]}>
       <Kpi label="Daily P/L" value={formatCurrency(stats.daily.netProfitLoss)} tone={stats.daily.netProfitLoss >= 0 ? 'green' : 'red'} detail={`${stats.daily.wins} wins / ${stats.daily.losses} losses`} />
       <Kpi label="Weekly P/L" value={formatCurrency(stats.weekly.netProfitLoss)} tone="cyan" detail={`${formatPercent(stats.weekly.winRate)} win rate`} />
