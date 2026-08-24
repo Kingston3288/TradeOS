@@ -27,6 +27,8 @@ export function createTradeDraft(timezone = demoSettings.timezone): Trade {
     closingBell: false,
     tradeTime: '',
     weekday: 'Mon',
+    vwapDirection: 'up',
+    macdTrend: 'raising',
     buyingType: 'call',
     contractCount: 1,
     purchasePrice: 0,

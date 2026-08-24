@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, PanResponder, Animated, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday } from './src/lib/analytics';
+import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -431,6 +431,8 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
       <Toggle label="Within 25% portfolio?" value={draft.withinPortfolioRiskLimit} onChange={(v) => update({ withinPortfolioRiskLimit: v })} />
       <Toggle label="Closing bell?" value={draft.closingBell ?? false} onChange={(v) => update({ closingBell: v })} />
       <Segment label="Day of week" value={draft.weekday ?? 'Mon'} options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri']} onChange={(v) => update({ weekday: v })} />
+      <Segment label="VWAP direction" value={draft.vwapDirection ?? 'up'} options={['up', 'down']} onChange={(v) => update({ vwapDirection: (v === 'down' ? 'down' : 'up') as 'up' })} />
+      <Segment label="MACD trend" value={draft.macdTrend ?? 'raising'} options={['raising', 'falling']} onChange={(v) => update({ macdTrend: (v === 'falling' ? 'falling' : 'raising') as 'raising' })} />
       <Field label="Trade time (12h, e.g. 3:45 PM)" value={draft.tradeTime ?? ''} placeholder="e.g. 3:45 PM" onChangeText={(v) => update({ tradeTime: v })} />
       <Segment label="Buying" value={draft.buyingType} options={['call', 'put']} onChange={(v) => update({ buyingType: v as Trade['buyingType'] })} />
       <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Math.max(1, Math.round(parseFloat(v) || 1)) })} />
@@ -558,6 +560,17 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
     <GlassCard><Text style={styles.cardTitle}>Win Rate by Day of Week</Text>
       {winRateByWeekday(trades).length === 0 && <Text style={styles.muted}>Set a day of week (Mon-Fri) on trades to see your best trading days.</Text>}
       {winRateByWeekday(trades).map((s) => <View key={s.weekday} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.weekday}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+    </GlassCard>
+    {/* Direction win-rate (VWAP / MACD) */}
+    <GlassCard><Text style={styles.cardTitle}>Edge by Condition</Text>
+      <Metric label="Overall win rate" value={`${formatPercent(overallWinRate)}`} />
+      {winRateByDirection(trades, 'vwapDirection', VWAP_LABELS).length === 0 && <Text style={styles.muted}>Log more closed trades to rank VWAP / MACD values.</Text>}
+      {winRateByDirection(trades, 'vwapDirection', VWAP_LABELS).map((s) => <View key={s.value} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+    </GlassCard>
+    {/* Win rate by MACD trend */}
+    <GlassCard><Text style={styles.cardTitle}>Win Rate by MACD Trend</Text>
+      {winRateByDirection(trades, 'macdTrend', MACD_LABELS).length === 0 && <Text style={styles.muted}>Log more closed trades to rank MACD trend values.</Text>}
+      {winRateByDirection(trades, 'macdTrend', MACD_LABELS).map((s) => <View key={s.value} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
     </GlassCard>
   </View>;
 }

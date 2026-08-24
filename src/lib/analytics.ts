@@ -515,3 +515,41 @@ export function winRateByWeekday(trades: Trade[]): WeekdayStat[] {
     });
   return rows;
 }
+
+export interface DirectionStat {
+  value: string;   // e.g. 'up' | 'down' | 'raising' | 'falling'
+  label: string;
+  trades: number;
+  winRate: number;
+  lossRate: number;
+  netProfitLoss: number;
+  averageProfitLoss: number;
+}
+
+/** Win/loss probability bucketed by a multi-value direction condition (VWAP, MACD). */
+export function winRateByDirection(trades: Trade[], field: 'vwapDirection' | 'macdTrend', labels: Record<string, string>): DirectionStat[] {
+  const closed = closedTrades(trades);
+  const byVal = new Map<string, Trade[]>();
+  for (const t of closed) {
+    const v = t[field];
+    if (!v) continue;
+    byVal.set(v, [...(byVal.get(v) ?? []), t]);
+  }
+  const rows: DirectionStat[] = [...byVal.entries()].map(([value, group]) => {
+    const pls = group.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0);
+    const losses = group.filter((t) => (calculateTradeFinancials(t).result === 'loss')).length;
+    return {
+      value,
+      label: labels[value] ?? value,
+      trades: group.length,
+      winRate: winRate(group),
+      lossRate: losses / group.length,
+      netProfitLoss: pls.reduce((s, v) => s + v, 0),
+      averageProfitLoss: average(pls),
+    };
+  });
+  return rows.sort((a, b) => b.winRate - a.winRate);
+}
+
+export const VWAP_LABELS = { up: 'Price above VWAP', down: 'Price below VWAP' };
+export const MACD_LABELS = { raising: 'MACD rising', falling: 'MACD falling' };

@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest';
+import { winRateByDirection, VWAP_LABELS, MACD_LABELS } from '../src/lib/analytics';
+import type { Trade } from '../src/lib/types';
+
+function trade(over: Partial<Trade>): Trade {
+  return {
+      id: 't', createdAt: '2026-08-01T10:00:00Z', timezone: 'America/New_York', tradeDate: '2026-08-01',
+      symbol: 'SPY', marketExcitement: 'up', fifteenMinutesPassed: true, entryRespectsFifteenMinuteHighLow: true,
+      emaCrossed: true, withinPortfolioRiskLimit: true, buyingType: 'call', contractCount: 1,
+      purchasePrice: 10, sellingPrice: 11, fees: 0, status: 'closed',
+    ...over,
+  };
+}
+
+describe('winRateByDirection (VWAP / MACD)', () => {
+  it('buckets VWAP direction with win/loss rates', () => {
+    const trades = [
+      trade({ vwapDirection: 'up', sellingPrice: 12 }),
+      trade({ vwapDirection: 'up', sellingPrice: 11.5 }),
+      trade({ vwapDirection: 'down', sellingPrice: 8 }),
+      trade({ vwapDirection: 'down', sellingPrice: 8 }),
+    ];
+    const rows = winRateByDirection(trades, 'vwapDirection', VWAP_LABELS);
+    // up: 2/2 win -> 1.0; down: 0/2 -> 0.0; sorted desc => up first
+    expect(rows[0]!.value).toBe('up');
+    expect(rows[0]!.winRate).toBeCloseTo(1);
+    expect(rows[0]!.trades).toBe(2);
+    const d = rows.find((r) => r.value === 'down');
+    expect(d!.winRate).toBeCloseTo(0);
+    expect(d!.lossRate).toBeCloseTo(1);
+  });
+  it('buckets MACD trend raising/falling', () => {
+    const trades = [
+      trade({ macdTrend: 'raising', sellingPrice: 12 }),
+      trade({ macdTrend: 'falling', sellingPrice: 8 }),
+    ];
+    const rows = winRateByDirection(trades, 'macdTrend', MACD_LABELS);
+    expect(rows).toHaveLength(2);
+    const r = rows.find((x) => x.value === 'raising');
+    expect(r!.winRate).toBeCloseTo(1);
+  });
+  it('ignores trades with no direction set', () => {
+    expect(winRateByDirection([trade({})], 'vwapDirection', VWAP_LABELS)).toHaveLength(0);
+  });
+});

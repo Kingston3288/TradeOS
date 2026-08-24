@@ -31,6 +31,10 @@ export interface Trade {
   tradeTime?: string;
   /** day of week the trade was taken: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' */
   weekday?: string;
+  /** VWAP position/direction: price vs VWAP */
+  vwapDirection?: 'up' | 'down';
+  /** MACD trend direction */
+  macdTrend?: 'raising' | 'falling';
 }
 
 export interface Settings {
