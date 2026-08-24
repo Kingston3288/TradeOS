@@ -452,7 +452,7 @@ function Kpi({ label, value, detail, tone }: { label: string; value: string; det
 function Metric({ label, value }: { label: string; value: string }) { return <View style={styles.metric}><Text style={styles.muted}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
 function BarRow({ label, value, max }: { label: string; value: number; max: number }) { const width = `${Math.min(100, Math.abs(value) / max * 100)}%` as const; return <View style={styles.barWrap}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.barTrack}><View style={[styles.barFill, { width, backgroundColor: value >= 0 ? colors.green : colors.red }]} /></View><Text style={styles.metricValue}>{formatCurrency(value)}</Text></View>; }
 function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) { const { label, ...rest } = props; return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TextInput {...rest} placeholderTextColor={colors.muted} style={styles.input} /></View>; }
-function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TouchableOpacity style={[styles.toggle, value && styles.toggleOn]} onPress={() => onChange(!value)}><Text style={[styles.buttonText, value && styles.toggleTextOn]}>{value ? 'Yes' : 'No'}</Text></TouchableOpacity></View>; }
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TouchableOpacity style={[styles.toggle, value && styles.toggleOn]} onPress={() => onChange(!value)}><Text style={value ? styles.toggleTextOn : styles.toggleTextOff}>{value ? 'Yes' : 'No'}</Text></TouchableOpacity></View>; }
 function Segment({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.segment}>{options.map((option) => <TouchableOpacity key={option} style={[styles.segmentItem, value === option && styles.segmentActive]} onPress={() => onChange(option)}><Text style={[styles.buttonText, value === option && styles.segmentActiveText]}>{option.toUpperCase()}</Text></TouchableOpacity>)}</View></View>; }
 
 const styles = StyleSheet.create({
@@ -492,9 +492,10 @@ const styles = StyleSheet.create({
   formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 16 },
   field: { minWidth: 210, flex: 1, gap: 8, padding: 12, borderRadius: 17, backgroundColor: 'rgba(255,255,255,.045)', borderColor: 'rgba(255,255,255,.07)', borderWidth: 1 },
   input: { color: colors.text, backgroundColor: 'rgba(3,8,22,.82)', borderColor: colors.line, borderWidth: 1, borderRadius: 13, padding: 12 },
-  toggle: { padding: 12, borderRadius: 13, backgroundColor: 'rgba(255,77,109,.16)', alignItems: 'center' },
-  toggleOn: { backgroundColor: '#19f6a3', borderColor: '#19f6a3' },
-  toggleTextOn: { color: '#041018' },
+  toggle: { padding: 12, borderRadius: 13, backgroundColor: '#ff4d6d', alignItems: 'center' },
+  toggleOn: { backgroundColor: '#35ff9b', borderColor: '#35ff9b' },
+  toggleTextOn: { color: '#03100b' },
+  toggleTextOff: { color: '#1b0308' },
   segment: { flexDirection: 'row', gap: 6 },
   segmentItem: { flex: 1, padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,.07)', alignItems: 'center' },
   segmentActive: { backgroundColor: '#19f6a3' },
