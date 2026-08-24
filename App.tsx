@@ -446,21 +446,31 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
 function SwipeableRow({ onEdit, children }: { onEdit: () => void; children: React.ReactNode }) {
   const tx = useRef(new Animated.Value(0)).current;
   const dxRef = useRef(0);
+  const [open, setOpen] = useState(false);
   const pan = PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy),
-    onPanResponderMove: (_, g) => { const dx = Math.max(-90, Math.min(0, dxRef.current + g.dx)); dxRef.current = dx; tx.setValue(dx); },
+    onPanResponderMove: (_, g) => { const dx = Math.max(-90, Math.min(0, dxRef.current + g.dx)); dxRef.current = dx; tx.setValue(dx); if (dx < -8) setOpen(true); },
     onPanResponderRelease: (_, g) => {
       const next = g.dx < -40 ? -80 : 0;
       dxRef.current = next;
+      setOpen(next < 0);
       Animated.spring(tx, { toValue: next, useNativeDriver: false, bounciness: 4 }).start();
     },
-    onPanResponderTerminate: () => { dxRef.current = 0; Animated.spring(tx, { toValue: 0, useNativeDriver: false }).start(); },
+    onPanResponderTerminate: () => { dxRef.current = 0; setOpen(false); Animated.spring(tx, { toValue: 0, useNativeDriver: false }).start(); },
+  });
+  // White pen (pencil) icon as inline SVG — only shown when revealed.
+  const penIcon = React.createElement('div', {
+    dangerouslySetInnerHTML: {
+      __html: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="white"/></svg>`,
+    },
   });
   return (
     <View style={{ position: 'relative', overflow: 'hidden' }}>
-      <Animated.View style={[styles.editUnderlay, { right: 0 }]}>
-        <TouchableOpacity onPress={onEdit} style={styles.editBtn}><Text style={{ color: '#041018', fontWeight: '900' }}>Edit</Text></TouchableOpacity>
-      </Animated.View>
+      {open && (
+        <Animated.View style={[styles.editUnderlay, { right: 0, opacity: tx.interpolate({ inputRange: [-90, 0], outputRange: [1, 0.3] }) }]}>
+          <TouchableOpacity onPress={onEdit} style={styles.editBtn}>{penIcon}</TouchableOpacity>
+        </Animated.View>
+      )}
       <Animated.View {...pan.panHandlers} style={[styles.tradeRow, { transform: [{ translateX: tx }] }]}>
         {children}
       </Animated.View>
@@ -706,7 +716,7 @@ const styles = StyleSheet.create({
   buttonText: { color: colors.text, fontWeight: '900' },
   error: { color: colors.red, marginBottom: 4 },
   tradeRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,.07)' },
-  editUnderlay: { position: 'absolute', top: 0, bottom: 0, width: 96, right: 0, backgroundColor: '#35ff9b', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: 22, borderRadius: 14, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 } as const,
-  editBtn: { width: '100%', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: 'transparent', alignItems: 'flex-start' } as const,
+  editUnderlay: { position: 'absolute', top: 0, bottom: 0, width: 96, right: 0, backgroundColor: '#35ff9b', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: 22, borderRadius: 14 },
+  editBtn: { width: '100%', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: 'transparent', alignItems: 'flex-start' },
   tradeSymbol: { color: colors.text, fontWeight: '900' },
 });
