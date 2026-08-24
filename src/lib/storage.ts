@@ -14,7 +14,7 @@ export const localDatabase: LocalDatabase = {
 export function createTradeDraft(timezone = demoSettings.timezone): Trade {
   const now = new Date();
   return {
-    id: `trade-${now.getTime()}`,
+    id: crypto.randomUUID(),
     createdAt: now.toISOString(),
     timezone,
     tradeDate: now.toISOString().slice(0, 10),

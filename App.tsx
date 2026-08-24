@@ -233,7 +233,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 
   async function saveDraft() {
     const computed = calculateTradeFinancials(draft);
-    const nextTrade: Trade = { ...draft, id: draft.id && draft.id !== 'draft' ? draft.id : `t-${Date.now()}`, createdAt: draft.createdAt || new Date().toISOString(), status: computed.status };
+    const nextTrade: Trade = { ...draft, id: draft.id && draft.id !== 'draft' ? draft.id : crypto.randomUUID(), createdAt: draft.createdAt || new Date().toISOString(), status: computed.status };
     const errors = validateTradeInput(nextTrade);
     if (errors.length) return;
     try {
@@ -257,6 +257,20 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
       setTrades((current) => current.filter((t) => t.id !== id));
     } catch (e) {
       setDbError('Failed to delete trade. ' + String((e as any)?.message || e));
+    }
+  }
+
+  async function setSellPrice(id: string, sellPrice: number) {
+    const existing = trades.find((t) => t.id === id);
+    if (!existing) return;
+    const closed: Trade = { ...existing, sellingPrice: sellPrice, status: 'closed', createdAt: existing.createdAt || new Date().toISOString() };
+    try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      if (!userId) return;
+      const saved = await repo.saveTrade(userId, closed);
+      setTrades((current) => current.map((t) => (t.id === saved.id ? saved : t)));
+    } catch (e) {
+      setDbError('Failed to update sell price. ' + String((e as any)?.message || e));
     }
   }
 
@@ -301,7 +315,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 
           {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} />}
           {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} saveDraft={saveDraft} trades={trades} />}
-          {screen === 'Trade Log' && <TradeLog trades={trades} onDelete={deleteTrade} />}
+          {screen === 'Trade Log' && <TradeLog trades={trades} onDelete={deleteTrade} onSetSellPrice={setSellPrice} />}
           {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} trades={trades} />}
           {screen === 'Reports' && <Reports trades={trades} stats={stats} />}
           {screen === 'Settings' && <Settings />}
@@ -366,8 +380,8 @@ function NewTrade({ draft, setDraft, saveDraft, trades }: { draft: Trade; setDra
   </GlassCard>;
 }
 
-function TradeLog({ trades, onDelete }: { trades: Trade[]; onDelete: (id: string) => void }) {
-  return <GlassCard><Text style={styles.cardTitle}>Trade Log</Text>{trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}{trades.map((trade) => { const f = calculateTradeFinancials(trade); return <View key={trade.id} style={styles.tradeRow}><View style={{ flex: 1 }}><Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text><Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text></View><Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text><TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity></View>; })}</GlassCard>;
+function TradeLog({ trades, onDelete, onSetSellPrice }: { trades: Trade[]; onDelete: (id: string) => void; onSetSellPrice: (id: string, sellPrice: number) => void }) {
+  return <GlassCard><Text style={styles.cardTitle}>Trade Log</Text>{trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}{trades.map((trade) => { const f = calculateTradeFinancials(trade); return <View key={trade.id} style={styles.tradeRow}><View style={{ flex: 1 }}><Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text><Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text></View><Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text>{trade.status === 'open' && <TouchableOpacity onPress={() => { const v = window.prompt('Enter sell price for ' + (trade.symbol || 'this trade') + ':'); if (v !== null && v !== '' && !isNaN(Number(v))) onSetSellPrice(trade.id, Number(v)); }} style={{ marginLeft: 12 }}><Text style={{ color: colors.cyan, fontSize: 11 }}>Set Sell Price</Text></TouchableOpacity>}<TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity></View>; })}</GlassCard>;
 }
 
 function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof analyzeAllConditions>; stats: ReturnType<typeof buildDashboardStats>; trades: Trade[] }) {
