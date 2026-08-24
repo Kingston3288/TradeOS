@@ -374,8 +374,8 @@ function NewTrade({ draft, setDraft, saveDraft, trades }: { draft: Trade; setDra
       <Field label="Trade time (12h, e.g. 3:45 PM)" value={draft.tradeTime ?? ''} placeholder="e.g. 3:45 PM" onChangeText={(v) => update({ tradeTime: v })} />
       <Segment label="Buying" value={draft.buyingType} options={['call', 'put']} onChange={(v) => update({ buyingType: v as Trade['buyingType'] })} />
       <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Math.max(1, Math.round(parseFloat(v) || 1)) })} />
-      <Field label="Purchase Price ($)" value={draft.purchasePrice > 0 ? String(draft.purchasePrice) : ''} keyboardType="decimal-pad" placeholder="e.g. 2.50" onChangeText={(v) => update({ purchasePrice: parseFloat(v) || 0 })} />
-      <Field label="Selling Price ($)" value={draft.sellingPrice === null || draft.sellingPrice === 0 ? '' : String(draft.sellingPrice)} keyboardType="decimal-pad" placeholder="e.g. 3.25" onChangeText={(v) => update({ sellingPrice: v === '' ? null : parseFloat(v) || 0 })} />
+      <MoneyField label="Purchase Price ($)" initial={draft.purchasePrice} placeholder="e.g. 2.50" onChange={(n) => update({ purchasePrice: n ?? 0 })} />
+      <MoneyField label="Selling Price ($)" initial={draft.sellingPrice} placeholder="e.g. 3.25" allowNull onChange={(n) => update({ sellingPrice: n })} />
     </View>
     <View style={styles.resultBox}><Text style={styles.mutedSmall}>Auto Result</Text><Text style={[styles.resultText, { color: financials.result === 'loss' ? colors.red : financials.result === 'open' ? colors.yellow : colors.green }]}>{financials.result === 'open' ? 'Open trade' : `${formatCurrency(financials.netProfitLoss ?? 0)} · ${(financials.profitLossPercentage ?? 0).toFixed(1)}%`}</Text></View>
     {errors.map((e) => <Text key={e} style={styles.error}>{e}</Text>)}
@@ -452,6 +452,18 @@ function Kpi({ label, value, detail, tone }: { label: string; value: string; det
 function Metric({ label, value }: { label: string; value: string }) { return <View style={styles.metric}><Text style={styles.muted}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
 function BarRow({ label, value, max }: { label: string; value: number; max: number }) { const width = `${Math.min(100, Math.abs(value) / max * 100)}%` as const; return <View style={styles.barWrap}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.barTrack}><View style={[styles.barFill, { width, backgroundColor: value >= 0 ? colors.green : colors.red }]} /></View><Text style={styles.metricValue}>{formatCurrency(value)}</Text></View>; }
 function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) { const { label, ...rest } = props; return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TextInput {...rest} placeholderTextColor={colors.muted} style={styles.input} /></View>; }
+function MoneyField({ label, initial, placeholder, allowNull, onChange }: { label: string; initial: number | null; placeholder?: string; allowNull?: boolean; onChange: (n: number | null) => void }) {
+  const [text, setText] = React.useState(initial === null || initial === 0 ? '' : String(initial));
+  // Allow only digits and one decimal point while typing (keeps the decimal clickable).
+  const handle = (v: string) => {
+    const cleaned = v.replace(/[^0-9.]/g, '');
+    setText(cleaned);
+    if (cleaned === '') { onChange(allowNull ? null : 0); return; }
+    const num = parseFloat(cleaned);
+    if (!isNaN(num)) onChange(allowNull && num === 0 ? null : num);
+  };
+  return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TextInput value={text} keyboardType="decimal-pad" placeholder={placeholder} placeholderTextColor={colors.muted} style={styles.input} onChangeText={handle} /></View>;
+}
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TouchableOpacity style={[styles.toggle, value && styles.toggleOn]} onPress={() => onChange(!value)}><Text style={value ? styles.toggleTextOn : styles.toggleTextOff}>{value ? 'Yes' : 'No'}</Text></TouchableOpacity></View>; }
 function Segment({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.segment}>{options.map((option) => <TouchableOpacity key={option} style={[styles.segmentItem, value === option && styles.segmentActive]} onPress={() => onChange(option)}><Text style={[styles.buttonText, value === option && styles.segmentActiveText]}>{option.toUpperCase()}</Text></TouchableOpacity>)}</View></View>; }
 
