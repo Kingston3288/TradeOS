@@ -6,6 +6,7 @@ const CONDITION_KEYS: Array<{ key: keyof Trade; label: string }> = [
   { key: 'entryRespectsFifteenMinuteHighLow', label: 'Entry respected first 15m high/low' },
   { key: 'emaCrossed', label: 'EMA crossed' },
   { key: 'withinPortfolioRiskLimit', label: 'Within portfolio risk limit' },
+  { key: 'closingBell', label: 'Closing bell (end of day)' },
 ];
 
 export function calculateTradeFinancials(trade: Trade): TradeFinancials {
@@ -182,6 +183,7 @@ const CONDITION_LABELS: Record<ConditionKey, string> = {
   entryRespectsFifteenMinuteHighLow: '15m HL respected',
   emaCrossed: 'EMA confirmed',
   withinPortfolioRiskLimit: 'Within risk',
+  closingBell: 'Closing bell',
 };
 
 const CONDITION_KEYS_TYPED: ConditionKey[] = [
@@ -189,6 +191,7 @@ const CONDITION_KEYS_TYPED: ConditionKey[] = [
   'entryRespectsFifteenMinuteHighLow',
   'emaCrossed',
   'withinPortfolioRiskLimit',
+  'closingBell',
 ];
 
 /**
@@ -353,4 +356,37 @@ export function bestRecommendedSetup(trades: Trade[]): { label: string; winRate:
   const top = setups[0];
   if (!top) return null;
   return { label: top.label, winRate: top.winRate, sampleSize: top.sampleSize, conditions: top.conditions };
+}
+
+export interface TimeOfDayStat {
+  hour: number; // 0-23
+  label: string; // e.g. "9:00-10:00"
+  trades: number;
+  winRate: number;
+  netProfitLoss: number;
+}
+
+/** Win/loss probability bucketed by the trade's logged time-of-day. */
+export function winRateByTimeOfDay(trades: Trade[]): TimeOfDayStat[] {
+  const closed = closedTrades(trades);
+  const byHour = new Map<number, Trade[]>();
+  for (const t of closed) {
+    const tm = t.tradeTime; // "HH:MM"
+    if (!tm) continue;
+    const h = parseInt(tm.slice(0, 2), 10);
+    if (isNaN(h)) continue;
+    byHour.set(h, [...(byHour.get(h) ?? []), t]);
+  }
+  const rows: TimeOfDayStat[] = [];
+  for (const [hour, group] of [...byHour.entries()].sort((a, b) => a[0] - b[0])) {
+    const results = group.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0);
+    rows.push({
+      hour,
+      label: `${String(hour).padStart(2, '0')}:00–${String(hour).padStart(2, '0')}:59`,
+      trades: group.length,
+      winRate: winRate(group),
+      netProfitLoss: results.reduce((s, v) => s + v, 0),
+    });
+  }
+  return rows;
 }

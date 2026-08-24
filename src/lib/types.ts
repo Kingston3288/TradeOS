@@ -25,6 +25,10 @@ export interface Trade {
   notes?: string;
   screenshotUrls?: string[];
   strategyTag?: string;
+  /** e.g. true if entered around the closing bell (last 15 min) */
+  closingBell?: boolean;
+  /** 24h trade time, e.g. "15:45" */
+  tradeTime?: string;
 }
 
 export interface Settings {
@@ -79,7 +83,7 @@ export interface SetupPattern {
   sampleSize: number;
 }
 
-export type ConditionKey = 'fifteenMinutesPassed' | 'entryRespectsFifteenMinuteHighLow' | 'emaCrossed' | 'withinPortfolioRiskLimit';
+export type ConditionKey = 'fifteenMinutesPassed' | 'entryRespectsFifteenMinuteHighLow' | 'emaCrossed' | 'withinPortfolioRiskLimit' | 'closingBell';
 
 export interface CombinedSetup {
   /** Which conditions were true for this setup, e.g. ['15m passed','EMA confirmed'] */

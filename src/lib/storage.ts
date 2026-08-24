@@ -24,6 +24,8 @@ export function createTradeDraft(timezone = demoSettings.timezone): Trade {
     entryRespectsFifteenMinuteHighLow: false,
     emaCrossed: false,
     withinPortfolioRiskLimit: true,
+    closingBell: false,
+    tradeTime: '',
     buyingType: 'call',
     contractCount: 1,
     purchasePrice: 0,

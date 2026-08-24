@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm } from './src/lib/analytics';
+import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm, winRateByTimeOfDay } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -369,6 +369,9 @@ function NewTrade({ draft, setDraft, saveDraft, trades }: { draft: Trade; setDra
       <Toggle label="Entry respects 15m high/low?" value={draft.entryRespectsFifteenMinuteHighLow} onChange={(v) => update({ entryRespectsFifteenMinuteHighLow: v })} />
       <Toggle label="9 or 14 EMA crossed?" value={draft.emaCrossed} onChange={(v) => update({ emaCrossed: v })} />
       <Toggle label="Within 25% portfolio?" value={draft.withinPortfolioRiskLimit} onChange={(v) => update({ withinPortfolioRiskLimit: v })} />
+      <Toggle label="Closing bell?" value={draft.closingBell ?? false} onChange={(v) => update({ closingBell: v })} />
+      <Segment label="Market" value={draft.marketExcitement} options={['up', 'down', 'neutral']} onChange={(v) => update({ marketExcitement: v as Trade['marketExcitement'] })} />
+      <Field label="Trade time (HH:MM)" value={draft.tradeTime ?? ''} placeholder="e.g. 15:45" onChangeText={(v) => update({ tradeTime: v })} />
       <Segment label="Buying" value={draft.buyingType} options={['call', 'put']} onChange={(v) => update({ buyingType: v as Trade['buyingType'] })} />
       <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Number(v) || 0 })} />
       <Field label="Purchase Price" value={String(draft.purchasePrice)} keyboardType="numeric" onChangeText={(v) => update({ purchasePrice: Number(v) || 0 })} />
@@ -414,6 +417,11 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
     </GlassCard>
     {/* legacy condition cards */}
     <GlassCard><Text style={styles.cardTitle}>Single-Condition Lift</Text>{analyses.slice(0, 3).map((a) => <View key={String(a.key)} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{a.label}</Text><Text style={styles.metricValue}>{formatPercent(a.trueWinRate)} · +{(a.winLift * 100).toFixed(0)}pts</Text></View>)}</GlassCard>
+    {/* Time of day win rate */}
+    <GlassCard><Text style={styles.cardTitle}>Win Rate by Time of Day</Text>
+      {winRateByTimeOfDay(trades).length === 0 && <Text style={styles.muted}>Add a trade time (HH:MM) to trades to see when you win most.</Text>}
+      {winRateByTimeOfDay(trades).map((s) => <View key={s.hour} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+    </GlassCard>
   </View>;
 }
 

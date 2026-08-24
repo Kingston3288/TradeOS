@@ -39,6 +39,8 @@ export function dbTradeToApp(row: DbTrade): Trade {
     entryRespectsFifteenMinuteHighLow: Boolean((row.rule_checklist as any)?.entryRespectsFifteenMinuteHighLow),
     emaCrossed: Boolean((row.rule_checklist as any)?.emaCrossed),
     withinPortfolioRiskLimit: Boolean((row.rule_checklist as any)?.withinPortfolioRiskLimit),
+    closingBell: Boolean((row.rule_checklist as any)?.closingBell),
+    tradeTime: (row.rule_checklist as any)?.tradeTime || undefined,
     buyingType: direction,
     contractCount: Number(row.contracts),
     purchasePrice: Number(row.entry_price),
@@ -72,6 +74,8 @@ export function appTradeToDb(trade: Trade, userId: string): Omit<DbTrade, 'id' |
       entryRespectsFifteenMinuteHighLow: Boolean(trade.entryRespectsFifteenMinuteHighLow),
       emaCrossed: Boolean(trade.emaCrossed),
       withinPortfolioRiskLimit: Boolean(trade.withinPortfolioRiskLimit),
+      closingBell: Boolean(trade.closingBell),
+      tradeTime: trade.tradeTime || null,
     },
     screenshot_urls: trade.screenshotUrls || [],
   };
