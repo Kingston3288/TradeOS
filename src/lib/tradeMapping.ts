@@ -41,6 +41,7 @@ export function dbTradeToApp(row: DbTrade): Trade {
     withinPortfolioRiskLimit: Boolean((row.rule_checklist as any)?.withinPortfolioRiskLimit),
     closingBell: Boolean((row.rule_checklist as any)?.closingBell),
     tradeTime: (row.rule_checklist as any)?.tradeTime || undefined,
+    weekday: (row.rule_checklist as any)?.weekday || undefined,
     buyingType: direction,
     contractCount: Number(row.contracts),
     purchasePrice: Number(row.entry_price),
@@ -76,6 +77,7 @@ export function appTradeToDb(trade: Trade, userId: string): Omit<DbTrade, 'id' |
       withinPortfolioRiskLimit: Boolean(trade.withinPortfolioRiskLimit),
       closingBell: Boolean(trade.closingBell),
       tradeTime: trade.tradeTime || null,
+      weekday: trade.weekday || null,
     },
     screenshot_urls: trade.screenshotUrls || [],
   };

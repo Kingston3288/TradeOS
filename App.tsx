@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm, winRateByTimeOfDay } from './src/lib/analytics';
+import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm, winRateByTimeOfDay, winRateByWeekday } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -370,6 +370,7 @@ function NewTrade({ draft, setDraft, saveDraft, trades }: { draft: Trade; setDra
       <Toggle label="9 or 14 EMA crossed?" value={draft.emaCrossed} onChange={(v) => update({ emaCrossed: v })} />
       <Toggle label="Within 25% portfolio?" value={draft.withinPortfolioRiskLimit} onChange={(v) => update({ withinPortfolioRiskLimit: v })} />
       <Toggle label="Closing bell?" value={draft.closingBell ?? false} onChange={(v) => update({ closingBell: v })} />
+      <Segment label="Day of week" value={draft.weekday ?? 'Mon'} options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri']} onChange={(v) => update({ weekday: v })} />
       <Field label="Trade time (12h, e.g. 3:45 PM)" value={draft.tradeTime ?? ''} placeholder="e.g. 3:45 PM" onChangeText={(v) => update({ tradeTime: v })} />
       <Segment label="Buying" value={draft.buyingType} options={['call', 'put']} onChange={(v) => update({ buyingType: v as Trade['buyingType'] })} />
       <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Math.max(1, Math.round(parseFloat(v) || 1)) })} />
@@ -421,6 +422,11 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
       {winRateByTimeOfDay(trades).length === 0 && <Text style={styles.muted}>Add a trade time (HH:MM) to trades to see when you win most.</Text>}
       {winRateByTimeOfDay(trades).map((s) => <View key={s.hour} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
     </GlassCard>
+    {/* Win rate by weekday */}
+    <GlassCard><Text style={styles.cardTitle}>Win Rate by Day of Week</Text>
+      {winRateByWeekday(trades).length === 0 && <Text style={styles.muted}>Set a day of week (Mon-Fri) on trades to see your best trading days.</Text>}
+      {winRateByWeekday(trades).map((s) => <View key={s.weekday} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.weekday}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.trades}</Text></View>)}
+    </GlassCard>
   </View>;
 }
 
@@ -446,8 +452,8 @@ function Kpi({ label, value, detail, tone }: { label: string; value: string; det
 function Metric({ label, value }: { label: string; value: string }) { return <View style={styles.metric}><Text style={styles.muted}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
 function BarRow({ label, value, max }: { label: string; value: number; max: number }) { const width = `${Math.min(100, Math.abs(value) / max * 100)}%` as const; return <View style={styles.barWrap}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.barTrack}><View style={[styles.barFill, { width, backgroundColor: value >= 0 ? colors.green : colors.red }]} /></View><Text style={styles.metricValue}>{formatCurrency(value)}</Text></View>; }
 function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) { const { label, ...rest } = props; return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TextInput {...rest} placeholderTextColor={colors.muted} style={styles.input} /></View>; }
-function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TouchableOpacity style={[styles.toggle, value && styles.toggleOn]} onPress={() => onChange(!value)}><Text style={styles.buttonText}>{value ? 'Yes' : 'No'}</Text></TouchableOpacity></View>; }
-function Segment({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.segment}>{options.map((option) => <TouchableOpacity key={option} style={[styles.segmentItem, value === option && styles.segmentActive]} onPress={() => onChange(option)}><Text style={styles.buttonText}>{option.toUpperCase()}</Text></TouchableOpacity>)}</View></View>; }
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TouchableOpacity style={[styles.toggle, value && styles.toggleOn]} onPress={() => onChange(!value)}><Text style={[styles.buttonText, value && styles.toggleTextOn]}>{value ? 'Yes' : 'No'}</Text></TouchableOpacity></View>; }
+function Segment({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) { return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.segment}>{options.map((option) => <TouchableOpacity key={option} style={[styles.segmentItem, value === option && styles.segmentActive]} onPress={() => onChange(option)}><Text style={[styles.buttonText, value === option && styles.segmentActiveText]}>{option.toUpperCase()}</Text></TouchableOpacity>)}</View></View>; }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
@@ -487,10 +493,12 @@ const styles = StyleSheet.create({
   field: { minWidth: 210, flex: 1, gap: 8, padding: 12, borderRadius: 17, backgroundColor: 'rgba(255,255,255,.045)', borderColor: 'rgba(255,255,255,.07)', borderWidth: 1 },
   input: { color: colors.text, backgroundColor: 'rgba(3,8,22,.82)', borderColor: colors.line, borderWidth: 1, borderRadius: 13, padding: 12 },
   toggle: { padding: 12, borderRadius: 13, backgroundColor: 'rgba(255,77,109,.16)', alignItems: 'center' },
-  toggleOn: { backgroundColor: 'rgba(25,246,163,.18)' },
+  toggleOn: { backgroundColor: '#19f6a3', borderColor: '#19f6a3' },
+  toggleTextOn: { color: '#041018' },
   segment: { flexDirection: 'row', gap: 6 },
   segmentItem: { flex: 1, padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,.07)', alignItems: 'center' },
-  segmentActive: { backgroundColor: 'rgba(69,229,255,.18)' },
+  segmentActive: { backgroundColor: '#19f6a3' },
+  segmentActiveText: { color: '#041018' },
   resultBox: { padding: 16, borderRadius: 18, borderColor: colors.line, borderWidth: 1, marginVertical: 16 },
   resultText: { fontSize: 28, fontWeight: '900' },
   primaryButton: { backgroundColor: colors.cyan, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 15, alignSelf: 'flex-start' },

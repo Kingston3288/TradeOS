@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeAllConditions, parseTradeTimeToHour, winRateByTimeOfDay } from '../src/lib/analytics';
+import { analyzeAllConditions, parseTradeTimeToHour, winRateByTimeOfDay, winRateByWeekday } from '../src/lib/analytics';
 import type { Trade } from '../src/lib/types';
 
 function trade(over: Partial<Trade>): Trade {
@@ -67,5 +67,23 @@ describe('parseTradeTimeToHour', () => {
     expect(parseTradeTimeToHour('bad')).toBe(-1);
     expect(parseTradeTimeToHour('25:00')).toBe(-1);
     expect(parseTradeTimeToHour('')).toBe(-1);
+  });
+});
+
+describe('winRateByWeekday', () => {
+  it('buckets by weekday in Mon-Fri order', () => {
+    const trades = [
+      trade({ weekday: 'Fri', sellingPrice: 12 }),
+      trade({ weekday: 'Mon', sellingPrice: 8 }),
+      trade({ weekday: 'Mon', sellingPrice: 12 }),
+    ];
+    const rows = winRateByWeekday(trades);
+    expect(rows.map((r) => r.weekday)).toEqual(['Mon', 'Fri']);
+    expect(rows[0]!.trades).toBe(2);
+    expect(rows[0]!.winRate).toBeCloseTo(0.5);
+    expect(rows[1]!.winRate).toBeCloseTo(1);
+  });
+  it('returns empty if no weekday set', () => {
+    expect(winRateByWeekday([trade({})])).toHaveLength(0);
   });
 });

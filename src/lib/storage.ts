@@ -26,6 +26,7 @@ export function createTradeDraft(timezone = demoSettings.timezone): Trade {
     withinPortfolioRiskLimit: true,
     closingBell: false,
     tradeTime: '',
+    weekday: 'Mon',
     buyingType: 'call',
     contractCount: 1,
     purchasePrice: 0,

@@ -410,3 +410,38 @@ export function winRateByTimeOfDay(trades: Trade[]): TimeOfDayStat[] {
   }
   return rows;
 }
+
+export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
+
+export interface WeekdayStat {
+  weekday: string; // e.g. 'Mon'
+  trades: number;
+  winRate: number;
+  netProfitLoss: number;
+}
+
+/** Win/loss probability bucketed by weekday (Mon-Fri). */
+export function winRateByWeekday(trades: Trade[]): WeekdayStat[] {
+  const closed = closedTrades(trades);
+  const byDay = new Map<string, Trade[]>();
+  for (const t of closed) {
+    const d = t.weekday;
+    if (!d) continue;
+    byDay.set(d, [...(byDay.get(d) ?? []), t]);
+  }
+  // Order by Mon..Fri, then any others
+  const order = new Map<string, number>();
+  WEEKDAYS.forEach((d, i) => order.set(d, i));
+  const rows: WeekdayStat[] = [...byDay.entries()]
+    .sort((a, b) => (order.get(a[0]) ?? 99) - (order.get(b[0]) ?? 99))
+    .map(([weekday, group]) => {
+      const results = group.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0);
+      return {
+        weekday,
+        trades: group.length,
+        winRate: winRate(group),
+        netProfitLoss: results.reduce((s, v) => s + v, 0),
+      };
+    });
+  return rows;
+}

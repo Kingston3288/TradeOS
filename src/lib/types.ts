@@ -29,6 +29,8 @@ export interface Trade {
   closingBell?: boolean;
   /** 24h trade time, e.g. "15:45" */
   tradeTime?: string;
+  /** day of week the trade was taken: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' */
+  weekday?: string;
 }
 
 export interface Settings {
