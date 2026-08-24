@@ -264,6 +264,18 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 
   function deleteTrade(id: string) { setDeleteConfirmId(id); }
   function cancelDelete() { setDeleteConfirmId(null); }
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
+  function openEditTrade(t: Trade) { setEditingTrade(t); }
+  function closeEditTrade() { setEditingTrade(null); }
+  async function commitEditTrade(updated: Trade) {
+    try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      if (!userId) return;
+      const saved = await repo.saveTrade(userId, updated);
+      setTrades((c) => c.map((t) => (t.id === saved.id ? saved : t)));
+      setEditingTrade(null);
+    } catch (e) { setDbError('Failed to update trade. ' + String((e as any)?.message || e)); }
+  }
   async function performDeleteTrade() {
     const id = deleteConfirmId;
     setDeleteConfirmId(null);
@@ -275,20 +287,6 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
       setTrades((current) => current.filter((t) => t.id !== id));
     } catch (e) {
       setDbError('Failed to delete trade. ' + String((e as any)?.message || e));
-    }
-  }
-
-  async function setSellPrice(id: string, sellPrice: number) {
-    const existing = trades.find((t) => t.id === id);
-    if (!existing) return;
-    const closed: Trade = { ...existing, sellingPrice: sellPrice, status: 'closed', closedAt: new Date().toISOString(), createdAt: existing.createdAt || new Date().toISOString() };
-    try {
-      const userId = (await supabase.auth.getUser()).data.user?.id;
-      if (!userId) return;
-      const saved = await repo.saveTrade(userId, closed);
-      setTrades((current) => current.map((t) => (t.id === saved.id ? saved : t)));
-    } catch (e) {
-      setDbError('Failed to update sell price. ' + String((e as any)?.message || e));
     }
   }
 
@@ -333,7 +331,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 
           {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} />}
           {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} trades={trades} onSaveAttempt={openSaveConfirm} />}
-          {screen === 'Trade Log' && <TradeLog trades={trades} onDelete={deleteTrade} onSetSellPrice={setSellPrice} />}
+          {screen === 'Trade Log' && <TradeLog trades={trades} onOpenEdit={openEditTrade} onDelete={deleteTrade} />}
           {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} trades={trades} />}
           {screen === 'Reports' && <Reports trades={trades} stats={stats} />}
           {screen === 'Settings' && <Settings />}
@@ -376,6 +374,9 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
           )}
         </View>
       </Modal>
+
+      {/* Edit trade modal */}
+      <EditTradeModal trade={editingTrade} onClose={closeEditTrade} onSave={commitEditTrade} />
     </SafeAreaView>
   );
 }
@@ -480,13 +481,13 @@ function SwipeableRow({ onEdit, children }: { onEdit: () => void; children: Reac
   );
 }
 
-function TradeLog({ trades, onDelete, onSetSellPrice }: { trades: Trade[]; onDelete: (id: string) => void; onSetSellPrice: (id: string, sellPrice: number) => void }) {
+function TradeLog({ trades, onOpenEdit, onDelete }: { trades: Trade[]; onOpenEdit: (t: Trade) => void; onDelete: (id: string) => void }) {
   const results = trades.map((t) => { const f = calculateTradeFinancials(t); return { id: t.id, symbol: t.symbol || '—', net: f.netProfitLoss ?? 0, date: t.tradeDate, open: f.result === 'open' }; });
   return <GlassCard>
     <Text style={styles.cardTitle}>Trade Log</Text>
     {trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}
     {results.length >= 2 && <ResultLineChart results={results} />}
-    <Text style={styles.mutedSmall}>Tip: swipe a completed trade left to edit it.</Text>
+    <Text style={styles.mutedSmall}>Tip: tap ✎ to edit a trade. Swipe a closed trade left for quick edit.</Text>
     {trades.map((trade) => {
       const f = calculateTradeFinancials(trade);
       const buyV = trade.purchasePrice > 0 ? `$${trade.purchasePrice.toFixed(2)}` : '—';
@@ -501,17 +502,12 @@ function TradeLog({ trades, onDelete, onSetSellPrice }: { trades: Trade[]; onDel
             {sellV !== null && <Text style={[styles.mutedSmall, { color: colors.green }]}>Sell: {sellV}</Text>}
           </View>
           <Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text>
-          {trade.status === 'open' && (
-            <TouchableOpacity onPress={() => { const v = window.prompt('Enter sell price for ' + (trade.symbol || 'this trade') + ':'); if (v !== null && v !== '' && !isNaN(Number(v)) && Number(v) >= 0) onSetSellPrice(trade.id, Number(v)); }} style={{ marginLeft: 12 }}>
-              <Text style={{ color: colors.cyan, fontSize: 11 }}>Set Sell Price</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => onOpenEdit(trade)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.cyan, fontSize: 11 }}>✎ Edit</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 8, paddingHorizontal: 6 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity>
         </>
       );
-      // Closed trades: swipeable with Edit. Open trades stay plain (they have Set Sell Price).
       return trade.status === 'closed' ? (
-        <SwipeableRow key={trade.id} onEdit={() => { const v = window.prompt('Edit sell price for ' + (trade.symbol || 'this trade') + ' (current $' + (trade.sellingPrice ?? 0) + '):'); if (v !== null && v !== '' && !isNaN(Number(v)) && Number(v) >= 0) onSetSellPrice(trade.id, Number(v)); }}>{row}</SwipeableRow>
+        <SwipeableRow key={trade.id} onEdit={() => onOpenEdit(trade)}>{row}</SwipeableRow>
       ) : (
         <View key={trade.id} style={styles.tradeRow}>{row}</View>
       );
@@ -592,6 +588,49 @@ function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof 
 }
 
 function Settings() { return <GlassCard><Text style={styles.cardTitle}>Settings / Rule Engine</Text><Metric label="Timezone" value={localDatabase.settings.timezone} /><Metric label="Market Open" value={localDatabase.settings.marketOpenTime} /><Metric label="Risk Limit" value={`${localDatabase.settings.riskLimitPercent}%`} /><Metric label="Portfolio" value={formatCurrency(localDatabase.settings.portfolioValue)} /></GlassCard>; }
+
+function EditTradeModal({ trade, onClose, onSave }: { trade: Trade | null; onClose: () => void; onSave: (t: Trade) => void }) {
+  const [symbol, setSymbol] = React.useState<string>('');
+  const [buy, setBuy] = React.useState('');
+  const [sell, setSell] = React.useState('');
+  const [err, setErr] = React.useState('');
+  React.useEffect(() => {
+    if (trade) {
+      setSymbol(trade.symbol ?? '');
+      setBuy(trade.purchasePrice ? String(trade.purchasePrice) : '');
+      setSell(trade.sellingPrice === null || trade.sellingPrice === undefined ? '' : String(trade.sellingPrice));
+      setErr('');
+    }
+  }, [trade]);
+  if (!trade) return null;
+  function submit() {
+    const t = trade as Trade;
+    if (!symbol) { setErr('Symbol is required.'); return; }
+    const buyNum = parseFloat(buy) || 0;
+    if (buyNum <= 0) { setErr('Purchase price must be greater than 0.'); return; }
+    const sellNum = sell === '' ? null : parseFloat(sell) || 0;
+    const closed = sellNum !== null;
+    const up: Trade = { ...t, symbol: symbol.toUpperCase(), purchasePrice: buyNum, sellingPrice: sellNum, status: closed ? 'closed' : 'open', ...(closed && !t.closedAt ? { closedAt: new Date().toISOString() } : {}) };
+    onSave(up);
+  }
+  return (
+    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Edit Trade</Text>
+          <View style={styles.field}><Text style={styles.mutedSmall}>Symbol</Text><TextInput value={symbol} onChangeText={(v) => setSymbol(v.toUpperCase())} placeholder="e.g. SPY" placeholderTextColor={colors.muted} style={styles.input} /></View>
+          <View style={styles.field}><Text style={styles.mutedSmall}>Purchase Price ($)</Text><TextInput value={buy} onChangeText={setBuy} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.muted} style={styles.input} /></View>
+          <View style={styles.field}><Text style={styles.mutedSmall}>Selling Price ($) — leave blank if still open</Text><TextInput value={sell} onChangeText={setSell} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={colors.muted} style={styles.input} /></View>
+          {err ? <Text style={styles.error}>{err}</Text> : null}
+          <View style={styles.modalActions}>
+            <TouchableOpacity style={styles.cancelButton} onPress={onClose}><Text style={styles.buttonText}>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.confirmButton} onPress={submit}><Text style={styles.buttonText}>Save</Text></TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 function GlassCard({ children }: { children: React.ReactNode }) { return <View style={styles.card}>{children}</View>; }
 function Kpi({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'green' | 'red' | 'cyan' | 'yellow' }) { return <GlassCard><Text style={styles.mutedSmall}>{label}</Text><Text style={[styles.kpiValue, { color: colors[tone] }]}>{value}</Text><Text style={styles.mutedSmall}>{detail}</Text></GlassCard>; }
 function ResultLineChart({ results }: { results: { id: string; symbol: string; net: number; date: string; open: boolean }[] }) {
