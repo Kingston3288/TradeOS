@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, buildDashboardStats, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm } from './src/lib/analytics';
+import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -300,7 +300,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
           </View>
 
           {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} />}
-          {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} saveDraft={saveDraft} />}
+          {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} saveDraft={saveDraft} trades={trades} />}
           {screen === 'Trade Log' && <TradeLog trades={trades} onDelete={deleteTrade} />}
           {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} trades={trades} />}
           {screen === 'Reports' && <Reports trades={trades} stats={stats} />}
@@ -334,12 +334,20 @@ function Dashboard({ stats, compact }: { stats: ReturnType<typeof buildDashboard
   </View>;
 }
 
-function NewTrade({ draft, setDraft, saveDraft }: { draft: Trade; setDraft: (t: Trade) => void; saveDraft: () => void }) {
+function NewTrade({ draft, setDraft, saveDraft, trades }: { draft: Trade; setDraft: (t: Trade) => void; saveDraft: () => void; trades: Trade[] }) {
   const financials = calculateTradeFinancials(draft);
   const errors = validateTradeInput(draft);
   const update = (patch: Partial<Trade>) => setDraft({ ...draft, ...patch });
+  const best = bestRecommendedSetup(trades);
   return <GlassCard>
-    <Text style={styles.cardTitle}>New Trade Entry</Text><Text style={styles.muted}>Timestamp auto-detected. Selling price can stay blank until the trade closes.</Text>
+    <Text style={styles.cardTitle}>New Trade Entry</Text>
+    {best && (
+      <View style={{ padding: 12, borderRadius: 14, borderColor: colors.cyan + '55', borderWidth: 1, backgroundColor: colors.cyan + '12', marginBottom: 12 }}>
+        <Text style={{ color: colors.cyan, fontWeight: '900', fontSize: 12 }}>⚡ Highest-probability setup ({formatPercent(best.winRate)} · n={best.sampleSize})</Text>
+        <Text style={styles.mutedSmall}>{best.label}</Text>
+      </View>
+    )}
+    <Text style={styles.muted}>Timestamp auto-detected. Selling price can stay blank until the trade closes.</Text>
     <View style={styles.formGrid}>
       <Field label="Symbol" value={draft.symbol ?? ''} onChangeText={(v) => update({ symbol: v.toUpperCase() })} />
       <Segment label="Market" value={draft.marketExcitement} options={['up', 'down', 'neutral']} onChange={(v) => update({ marketExcitement: v as Trade['marketExcitement'] })} />
@@ -400,7 +408,15 @@ function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof 
   const sizing = computePositionSizing(trades, localDatabase.settings.riskLimitPercent);
   const { setups, overallWinRate } = findHighProbabilitySetups(trades, 3);
   const form = recentForm(trades, 20);
-  return <View style={styles.twoCol}><GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from closed trades.</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /></GlassCard><GlassCard><Text style={styles.cardTitle}>Probability Snapshot</Text><Metric label="Overall win rate" value={formatPercent(overallWinRate)} /><Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} /><Metric label="Position size" value={sizing.recommendedRiskPercent > 0 ? `${sizing.recommendedRiskPercent.toFixed(1)}%` : '—'} /><Metric label="Recent form" value={`${formatPercent(form.recentWinRate)}`} /><TouchableOpacity style={styles.secondaryButton}><Text style={styles.buttonText}>Export CSV</Text></TouchableOpacity></GlassCard></View>;
+  function exportCsv() {
+    const csv = buildTradesCsv(trades);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `tradeos-trades-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+  return <View style={styles.twoCol}><GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from closed trades.</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /><TouchableOpacity style={styles.secondaryButton} onPress={exportCsv}><Text style={styles.buttonText}>Export CSV ({trades.length})</Text></TouchableOpacity></GlassCard><GlassCard><Text style={styles.cardTitle}>Probability Snapshot</Text><Metric label="Overall win rate" value={formatPercent(overallWinRate)} /><Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} /><Metric label="Position size" value={sizing.recommendedRiskPercent > 0 ? `${sizing.recommendedRiskPercent.toFixed(1)}%` : '—'} /><Metric label="Recent form" value={`${formatPercent(form.recentWinRate)}`} /></GlassCard></View>;
 }
 
 function Settings() { return <GlassCard><Text style={styles.cardTitle}>Settings / Rule Engine</Text><Metric label="Timezone" value={localDatabase.settings.timezone} /><Metric label="Market Open" value={localDatabase.settings.marketOpenTime} /><Metric label="Risk Limit" value={`${localDatabase.settings.riskLimitPercent}%`} /><Metric label="Portfolio" value={formatCurrency(localDatabase.settings.portfolioValue)} /></GlassCard>; }

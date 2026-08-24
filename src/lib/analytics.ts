@@ -325,3 +325,32 @@ export function recentForm(trades: Trade[], lookback = 20): { recentWinRate: num
     recentCount: recent.length,
   };
 }
+
+function csvEscape(v: unknown): string {
+  const s = v === null || v === undefined ? '' : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Build a CSV string of all trades (for export). */
+export function buildTradesCsv(trades: Trade[]): string {
+  const headers = ['id', 'tradeDate', 'symbol', 'type', 'market', 'contracts', 'entry', 'exit', 'fees', 'netPL', 'status', 'strategy', 'notes'];
+  const rows = trades.map((t) => {
+    const f = calculateTradeFinancials(t);
+    return [
+      t.id, t.tradeDate, t.symbol || '', t.buyingType, t.marketExcitement,
+      t.contractCount, t.purchasePrice, t.sellingPrice === null ? '' : t.sellingPrice,
+      t.fees || 0, f.netProfitLoss === null ? '' : f.netProfitLoss,
+      t.status, t.strategyTag || '', t.notes || '',
+    ].map(csvEscape).join(',');
+  });
+  return [headers.join(','), ...rows].join('\n');
+}
+
+/** Determine the "best" condition basket to recommend on a new entry. */
+export function bestRecommendedSetup(trades: Trade[]): { label: string; winRate: number; sampleSize: number; conditions: string[] } | null {
+  const { setups } = findHighProbabilitySetups(trades, 3);
+  if (setups.length === 0) return null;
+  const top = setups[0];
+  if (!top) return null;
+  return { label: top.label, winRate: top.winRate, sampleSize: top.sampleSize, conditions: top.conditions };
+}
