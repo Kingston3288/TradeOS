@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>TradeOS — Product Mockups</title>
+<style>
+:root{--bg:#030611;--panel:rgba(13,22,42,.82);--line:rgba(255,255,255,.12);--text:#eff7ff;--muted:#8fa6c3;--green:#35ff9b;--red:#ff4d6d;--cyan:#45e5ff;--violet:#7b61ff}
+*{box-sizing:border-box;margin:0}
+body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:radial-gradient(circle at 15% 8%,rgba(123,97,255,.16),transparent 34vw),radial-gradient(circle at 85% 20%,rgba(69,229,255,.14),transparent 30vw),linear-gradient(180deg,#050817,#02040c);min-height:100vh}
+.wrap{max-width:1200px;margin:0 auto;padding:48px 28px 80px}
+nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:48px}
+.brand{display:flex;align-items:center;gap:12px}
+.lm{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--violet));display:grid;place-items:center;font-weight:900;font-size:20px;color:#041018}
+.brand b{font-size:20px}
+.brand span{color:var(--muted);font-size:12px}
+nav a{color:var(--cyan);text-decoration:none;font-weight:700}
+h1{font-size:clamp(30px,5vw,52px);font-weight:900;background:linear-gradient(90deg,var(--cyan),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;margin:8px 0 16px}
+.sub{color:var(--muted);font-size:17px;max-width:720px;line-height:1.6;margin-bottom:48px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:28px;align-items:start}
+@media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:24px;backdrop-filter:blur(14px)}
+.card h2{font-size:14px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:6px}
+.card .label{font-size:22px;font-weight:900;margin-bottom:20px}
+.imgbox{border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#000}
+.imgbox img{display:block;width:100%;height:auto}
+.phone{max-width:340px;margin:0 auto}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.badge{padding:5px 12px;border-radius:99px;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:700}
+.badge.green{color:var(--green);border-color:rgba(53,255,155,.4)}
+.badge.cyan{color:var(--cyan);border-color:rgba(69,229,255,.4)}
+.badge.violet{color:#c5b8ff;border-color:rgba(123,97,255,.5)}
+.animated{animation:float 5s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.note{color:var(--muted);font-size:13px;margin-top:14px;line-height:1.6}
+.cta{display:inline-block;margin-top:8px;background:linear-gradient(135deg,var(--cyan),var(--violet));color:#041018;font-weight:900;padding:12px 22px;border-radius:14px;text-decoration:none}
+</style></head><body>
+<div class="wrap">
+  <nav>
+    <div class="brand"><div class="lm">T</div><div><b>TradeOS</b> <span>Options journal intelligence</span></div></div>
+    <a href="https://tradeos.win">← Back to tradeos.win</a>
+  </nav>
+
+  <h1>TradeOS — Product Mockups</h1>
+  <p class="sub">Premium, futuristic fintech design concept for the mobile app (iPhone 17) and the web platform. Dark navy palette, neon cyan + electric violet glassmorphism — same trade conditions (VWAP direction, MACD trend), probability engine, and win-rate analytics shown in the live product.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Mobile</h2>
+      <div class="label">TradeOS App · iPhone 17</div>
+      <div class="imgbox phone animated"><img src="iphone17.png" alt="TradeOS iPhone 17 mobile mockup"/></div>
+      <div class="badges"><span class="badge green">Probability engine</span><span class="badge cyan">Live P/L chart</span><span class="badge violet">VWAP + MACD</span></div>
+      <p class="note">Dashboard KPIs, cumulative P/L line chart, New Trade entry with VWAP/MACD conditions, and the predicted-success popup.</p>
+    </div>
+
+    <div class="card">
+      <h2>Website</h2>
+      <div class="label">TradeOS Web Platform</div>
+      <div class="imgbox animated"><img src="website.png" alt="TradeOS website mockup"/></div>
+      <div class="badges"><span class="badge green">Win-rate analytics</span><span class="badge cyan">CLI dashboard</span><span class="badge violet">Private beta</span></div>
+      <p class="note">Marketing + command-center: sidebar nav, hero CTA, analytics with day-of-week bars and condition probability.</p>
+      <a class="cta" href="https://tradeos.win" style="margin-top:20px">Open live product</a>
+    </div>
+  </div>
+  <p class="note" style="margin-top:32px">Concept renderings generated with AI to explore the premium direction — the running product at tradeos.win implements the same visual system and functionality live.</p>
+</div>
+</body></html>
