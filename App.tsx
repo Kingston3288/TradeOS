@@ -405,6 +405,7 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
       <Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} />
       <Metric label="Profit factor" value={expectancy.profitFactor === Infinity ? '∞' : expectancy.profitFactor.toFixed(2)} />
       <Metric label="Payoff ratio" value={expectancy.payoffRatio.toFixed(2)} />
+      <Text style={styles.mutedSmall}>Profit Factor = total profit ÷ total loss (net-positive if &gt;1). Payoff = avg win ÷ avg loss (reward per $1 risked). PF ≈ Payoff × (win rate ÷ loss rate).</Text>
       <Metric label="Recent form (last 20)" value={`${formatPercent(form.recentWinRate)} vs ${formatPercent(form.overallWinRate)}`} />
       <Text style={styles.mutedSmall}>{sizing.message}</Text>
     </GlassCard>
