@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday } from './src/lib/analytics';
+import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -249,6 +249,18 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
     }
   }
 
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [pendingSave, setPendingSave] = useState<Trade | null>(null);
+  const prediction = useMemo(
+    () => (pendingSave ? predictSuccessRate(pendingSave, trades) : { percent: 0, matched: '', sampleSize: 0 }),
+    [pendingSave, trades],
+  );
+
+  function openSaveConfirm(t: Trade) { setPendingSave(t); setConfirmVisible(true); }
+  function closeSaveConfirm() { setConfirmVisible(false); }
+  function confirmSave() { if (pendingSave) { /* persist the pending draft */ const t = pendingSave; setPendingSave(null); setConfirmVisible(false); saveDraftToRepo(t); } }
+  async function saveDraftToRepo(t: Trade) { const computed = calculateTradeFinancials(t); const tr: Trade = { ...t, id: t.id && t.id !== 'draft' ? t.id : crypto.randomUUID(), createdAt: t.createdAt || new Date().toISOString(), status: computed.status }; const errors = validateTradeInput(tr); if (errors.length) return; try { const userId = (await supabase.auth.getUser()).data.user?.id; if (!userId) { setDbError('Not signed in.'); return; } const saved = await repo.saveTrade(userId, tr); setTrades((c) => [saved, ...c.filter((x) => x.id !== saved.id)]); setDraft({ ...createEmptyDraft(), id: 'draft' }); try { await saveAnalyticsSnapshot(userId, 'all', { expectancy: computeExpectancy([saved, ...trades]).expectancy }); } catch {} } catch (e) { setDbError('Failed to save trade. ' + String((e as any)?.message || e)); } }
+
   async function deleteTrade(id: string) {
     try {
       const userId = (await supabase.auth.getUser()).data.user?.id;
@@ -314,7 +326,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
           </View>
 
           {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} />}
-          {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} saveDraft={saveDraft} trades={trades} />}
+          {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} trades={trades} onSaveAttempt={openSaveConfirm} />}
           {screen === 'Trade Log' && <TradeLog trades={trades} onDelete={deleteTrade} onSetSellPrice={setSellPrice} />}
           {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} trades={trades} />}
           {screen === 'Reports' && <Reports trades={trades} stats={stats} />}
@@ -322,6 +334,27 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
           {!!dbError && <Text style={styles.error}>{dbError}</Text>}
         </ScrollView>
       </View>
+
+      {/* Animated save-confirm popup */}
+      <Modal transparent visible={confirmVisible} animationType="fade" onRequestClose={closeSaveConfirm}>
+        <View style={styles.modalBackdrop}>
+          {pendingSave && (
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Save this trade?</Text>
+              <View style={styles.predBox}>
+                <Text style={styles.predLabel}>Predicted win success (matched conditions)</Text>
+                <View style={styles.predTrack}><View style={[styles.predFill, { width: `${Math.min(100, prediction.percent)}%` }]} /></View>
+                <Text style={styles.predValue}>{prediction.percent}% <Text style={styles.mutedSmall}>· {prediction.matched} · n={prediction.sampleSize}</Text></Text>
+              </View>
+              <Text style={styles.mutedSmall}>Based on your closest matching condition combo from your trade history.</Text>
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelButton} onPress={closeSaveConfirm}><Text style={styles.buttonText}>No, cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.confirmButton} onPress={confirmSave}><Text style={styles.buttonText}>Yes, save</Text></TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -348,7 +381,7 @@ function Dashboard({ stats, compact }: { stats: ReturnType<typeof buildDashboard
   </View>;
 }
 
-function NewTrade({ draft, setDraft, saveDraft, trades }: { draft: Trade; setDraft: (t: Trade) => void; saveDraft: () => void; trades: Trade[] }) {
+function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; setDraft: (t: Trade) => void; trades: Trade[]; onSaveAttempt: (t: Trade) => void }) {
   const financials = calculateTradeFinancials(draft);
   const errors = validateTradeInput(draft);
   const update = (patch: Partial<Trade>) => setDraft({ ...draft, ...patch });
@@ -379,7 +412,7 @@ function NewTrade({ draft, setDraft, saveDraft, trades }: { draft: Trade; setDra
     </View>
     <View style={styles.resultBox}><Text style={styles.mutedSmall}>Auto Result</Text><Text style={[styles.resultText, { color: financials.result === 'loss' ? colors.red : financials.result === 'open' ? colors.yellow : colors.green }]}>{financials.result === 'open' ? 'Open trade' : `${formatCurrency(financials.netProfitLoss ?? 0)} · ${(financials.profitLossPercentage ?? 0).toFixed(1)}%`}</Text></View>
     {errors.map((e) => <Text key={e} style={styles.error}>{e}</Text>)}
-    <TouchableOpacity style={styles.primaryButton} onPress={saveDraft}><Text style={styles.primaryText}>Save Trade + Update Dashboard</Text></TouchableOpacity>
+    <TouchableOpacity style={styles.primaryButton} onPress={() => onSaveAttempt(draft)}><Text style={styles.primaryText}>Save Trade + Update Dashboard</Text></TouchableOpacity>
   </GlassCard>;
 }
 
@@ -497,6 +530,17 @@ const styles = StyleSheet.create({
   kpiGrid: { flexDirection: 'row', gap: 16 },
   oneCol: { flexDirection: 'column' },
   twoCol: { flexDirection: 'row', gap: 16, flexWrap: 'wrap' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(3,8,22,.7)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  modalCard: { backgroundColor: '#0b1330', borderColor: colors.line, borderWidth: 1, borderRadius: 24, padding: 24, maxWidth: 420, width: '100%', ...shadow },
+  modalTitle: { color: colors.text, fontSize: 22, fontWeight: '900', marginBottom: 8 },
+  predBox: { marginVertical: 14 },
+  predLabel: { color: colors.muted, fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  predTrack: { height: 16, borderRadius: 99, backgroundColor: 'rgba(255,255,255,.1)', overflow: 'hidden' },
+  predFill: { height: 16, borderRadius: 99, backgroundColor: '#35ff9b' },
+  predValue: { color: colors.text, fontSize: 26, fontWeight: '900', marginTop: 10 },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 18 },
+  cancelButton: { flex: 1, padding: 13, borderRadius: 14, backgroundColor: '#ff4d6d', alignItems: 'center' },
+  confirmButton: { flex: 1, padding: 13, borderRadius: 14, backgroundColor: '#35ff9b', alignItems: 'center' },
   kpiValue: { fontSize: 32, fontWeight: '900', marginVertical: 6 },
   metric: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, borderBottomColor: 'rgba(255,255,255,.07)', borderBottomWidth: 1, paddingVertical: 10 },
   metricValue: { color: colors.text, fontWeight: '900' },

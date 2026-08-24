@@ -358,6 +358,30 @@ export function bestRecommendedSetup(trades: Trade[]): { label: string; winRate:
   return { label: top.label, winRate: top.winRate, sampleSize: top.sampleSize, conditions: top.conditions };
 }
 
+/**
+ * Predict success % for a prospective trade by matching its currently-selected
+ * conditions to the closest historical combo (exact match first, then the
+ * best-known setup). Falls back to overall win rate when no match exists.
+ */
+export function predictSuccessRate(draft: Trade, trades: Trade[]): { percent: number; matched: string; sampleSize: number } {
+  const { combos, overallWinRate } = rankCombosByWinRate(trades, 2);
+  const activeConditions = CONDITION_KEYS_TYPED.filter((c) => Boolean(draft[c]));
+  const activeLabels = activeConditions.map((c) => CONDITION_LABELS[c]);
+  if (activeConditions.length === 0) {
+    return { percent: Math.round(overallWinRate * 100), matched: 'All trades (no condition selected)', sampleSize: rankCombosByWinRate(trades, 2).totalClosed };
+  }
+  // Exact match on the set of active conditions
+  const exact = combos.find((c) => {
+    const sameSize = c.conditions.length === activeLabels.length;
+    return sameSize && activeLabels.every((l) => c.conditions.includes(l));
+  });
+  if (exact) return { percent: Math.round(exact.winRate * 100), matched: exact.label, sampleSize: exact.sampleSize };
+  // Otherwise use the best-known combo win rate as a proxy
+  const best = combos[0];
+  if (best) return { percent: Math.round(best.winRate * 100), matched: `closest: ${best.label}`, sampleSize: best.sampleSize };
+  return { percent: Math.round(overallWinRate * 100), matched: 'Overall win rate', sampleSize: 0 };
+}
+
 export interface ComboRanking extends CombinedSetup {
   lossRate: number;
   breakevenCount: number;
