@@ -251,6 +251,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [pendingSave, setPendingSave] = useState<Trade | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const prediction = useMemo(
     () => (pendingSave ? predictSuccessRate(pendingSave, trades) : { percent: 0, matched: '', sampleSize: 0 }),
     [pendingSave, trades],
@@ -259,9 +260,14 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   function openSaveConfirm(t: Trade) { setPendingSave(t); setConfirmVisible(true); }
   function closeSaveConfirm() { setConfirmVisible(false); }
   function confirmSave() { if (pendingSave) { /* persist the pending draft */ const t = pendingSave; setPendingSave(null); setConfirmVisible(false); saveDraftToRepo(t); } }
-  async function saveDraftToRepo(t: Trade) { const computed = calculateTradeFinancials(t); const tr: Trade = { ...t, id: t.id && t.id !== 'draft' ? t.id : crypto.randomUUID(), createdAt: t.createdAt || new Date().toISOString(), status: computed.status }; const errors = validateTradeInput(tr); if (errors.length) return; try { const userId = (await supabase.auth.getUser()).data.user?.id; if (!userId) { setDbError('Not signed in.'); return; } const saved = await repo.saveTrade(userId, tr); setTrades((c) => [saved, ...c.filter((x) => x.id !== saved.id)]); setDraft({ ...createEmptyDraft(), id: 'draft' }); try { await saveAnalyticsSnapshot(userId, 'all', { expectancy: computeExpectancy([saved, ...trades]).expectancy }); } catch {} } catch (e) { setDbError('Failed to save trade. ' + String((e as any)?.message || e)); } }
+  async function saveDraftToRepo(t: Trade) { const computed = calculateTradeFinancials(t); const tr: Trade = { ...t, id: t.id && t.id !== 'draft' ? t.id : crypto.randomUUID(), createdAt: t.createdAt || new Date().toISOString(), status: computed.status }; const errors = validateTradeInput(tr); if (errors.length) return; try { const userId = (await supabase.auth.getUser()).data.user?.id; if (!userId) { setDbError('Not signed in.'); return; } const saved = await repo.saveTrade(userId, tr); setTrades((c) => [saved, ...c.filter((x) => x.id !== saved.id)]); setDraft({ ...createEmptyDraft(), id: 'draft' }); setScreen('Trade Log'); try { await saveAnalyticsSnapshot(userId, 'all', { expectancy: computeExpectancy([saved, ...trades]).expectancy }); } catch {} } catch (e) { setDbError('Failed to save trade. ' + String((e as any)?.message || e)); } }
 
-  async function deleteTrade(id: string) {
+  function deleteTrade(id: string) { setDeleteConfirmId(id); }
+  function cancelDelete() { setDeleteConfirmId(null); }
+  async function performDeleteTrade() {
+    const id = deleteConfirmId;
+    setDeleteConfirmId(null);
+    if (!id) return;
     try {
       const userId = (await supabase.auth.getUser()).data.user?.id;
       if (!userId) return;
@@ -335,7 +341,22 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
         </ScrollView>
       </View>
 
-      {/* Animated save-confirm popup */}
+      {deleteConfirmId && (
+        <Modal transparent visible animationType="fade" onRequestClose={cancelDelete}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Delete this trade?</Text>
+              <Text style={styles.mutedSmall}>Deleting this will affect your overall Win/Loss analytics. This cannot be undone.</Text>
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelButton} onPress={cancelDelete}><Text style={styles.buttonText}>No, keep it</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.confirmButton} onPress={performDeleteTrade}><Text style={styles.buttonText}>Yes, delete</Text></TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Save-confirm popup */}
       <Modal transparent visible={confirmVisible} animationType="fade" onRequestClose={closeSaveConfirm}>
         <View style={styles.modalBackdrop}>
           {pendingSave && (
