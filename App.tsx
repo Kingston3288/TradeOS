@@ -444,7 +444,33 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
 }
 
 function TradeLog({ trades, onDelete, onSetSellPrice }: { trades: Trade[]; onDelete: (id: string) => void; onSetSellPrice: (id: string, sellPrice: number) => void }) {
-  return <GlassCard><Text style={styles.cardTitle}>Trade Log</Text>{trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}{trades.map((trade) => { const f = calculateTradeFinancials(trade); return <View key={trade.id} style={styles.tradeRow}><View style={{ flex: 1 }}><Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text><Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text></View><Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text>{trade.status === 'open' && <TouchableOpacity onPress={() => { const v = window.prompt('Enter sell price for ' + (trade.symbol || 'this trade') + ':'); if (v !== null && v !== '' && !isNaN(Number(v))) onSetSellPrice(trade.id, Number(v)); }} style={{ marginLeft: 12 }}><Text style={{ color: colors.cyan, fontSize: 11 }}>Set Sell Price</Text></TouchableOpacity>}<TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity></View>; })}</GlassCard>;
+  return <GlassCard>
+    <Text style={styles.cardTitle}>Trade Log</Text>
+    {trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}
+    {trades.map((trade) => {
+      const f = calculateTradeFinancials(trade);
+      const buyV = trade.purchasePrice > 0 ? `$${trade.purchasePrice.toFixed(2)}` : '—';
+      const sellV = trade.sellingPrice !== null && trade.sellingPrice !== undefined ? `$${trade.sellingPrice.toFixed(2)}` : null;
+      return (
+        <View key={trade.id} style={styles.tradeRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text>
+            <Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text>
+            <Text style={styles.mutedSmall}>Buy: {buyV}</Text>
+            {trade.tradeTime ? <Text style={styles.mutedSmall}>Time: {trade.tradeTime}</Text> : null}
+            {sellV !== null && <Text style={[styles.mutedSmall, { color: colors.green }]}>Sell: {sellV}</Text>}
+          </View>
+          <Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text>
+          {trade.status === 'open' && (
+            <TouchableOpacity onPress={() => { const v = window.prompt('Enter sell price for ' + (trade.symbol || 'this trade') + ':'); if (v !== null && v !== '' && !isNaN(Number(v)) && Number(v) >= 0) onSetSellPrice(trade.id, Number(v)); }} style={{ marginLeft: 12 }}>
+              <Text style={{ color: colors.cyan, fontSize: 11 }}>Set Sell Price</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity>
+        </View>
+      );
+    })}
+  </GlassCard>;
 }
 
 function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof analyzeAllConditions>; stats: ReturnType<typeof buildDashboardStats>; trades: Trade[] }) {
