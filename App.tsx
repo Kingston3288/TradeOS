@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, useWindowDimensions } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, PanResponder, Animated, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
 import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday } from './src/lib/analytics';
@@ -443,18 +443,44 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
   </GlassCard>;
 }
 
+function SwipeableRow({ onEdit, children }: { onEdit: () => void; children: React.ReactNode }) {
+  const tx = useRef(new Animated.Value(0)).current;
+  const dxRef = useRef(0);
+  const pan = PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy),
+    onPanResponderMove: (_, g) => { const dx = Math.max(-90, Math.min(0, dxRef.current + g.dx)); dxRef.current = dx; tx.setValue(dx); },
+    onPanResponderRelease: (_, g) => {
+      const next = g.dx < -40 ? -80 : 0;
+      dxRef.current = next;
+      Animated.spring(tx, { toValue: next, useNativeDriver: false, bounciness: 4 }).start();
+    },
+    onPanResponderTerminate: () => { dxRef.current = 0; Animated.spring(tx, { toValue: 0, useNativeDriver: false }).start(); },
+  });
+  return (
+    <View style={{ position: 'relative', overflow: 'hidden' }}>
+      <Animated.View style={[styles.editUnderlay, { right: 0 }]}>
+        <TouchableOpacity onPress={onEdit} style={styles.editBtn}><Text style={{ color: '#041018', fontWeight: '900' }}>Edit</Text></TouchableOpacity>
+      </Animated.View>
+      <Animated.View {...pan.panHandlers} style={[styles.tradeRow, { transform: [{ translateX: tx }] }]}>
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
 function TradeLog({ trades, onDelete, onSetSellPrice }: { trades: Trade[]; onDelete: (id: string) => void; onSetSellPrice: (id: string, sellPrice: number) => void }) {
   const results = trades.map((t) => { const f = calculateTradeFinancials(t); return { id: t.id, symbol: t.symbol || '—', net: f.netProfitLoss ?? 0, date: t.tradeDate, open: f.result === 'open' }; });
   return <GlassCard>
     <Text style={styles.cardTitle}>Trade Log</Text>
     {trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}
     {results.length >= 2 && <ResultLineChart results={results} />}
+    <Text style={styles.mutedSmall}>Tip: swipe a completed trade left to edit it.</Text>
     {trades.map((trade) => {
       const f = calculateTradeFinancials(trade);
       const buyV = trade.purchasePrice > 0 ? `$${trade.purchasePrice.toFixed(2)}` : '—';
       const sellV = trade.sellingPrice !== null && trade.sellingPrice !== undefined ? `$${trade.sellingPrice.toFixed(2)}` : null;
-      return (
-        <View key={trade.id} style={styles.tradeRow}>
+      const row = (
+        <>
           <View style={{ flex: 1 }}>
             <Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text>
             <Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text>
@@ -469,7 +495,13 @@ function TradeLog({ trades, onDelete, onSetSellPrice }: { trades: Trade[]; onDel
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity>
-        </View>
+        </>
+      );
+      // Closed trades: swipeable with Edit. Open trades stay plain (they have Set Sell Price).
+      return trade.status === 'closed' ? (
+        <SwipeableRow key={trade.id} onEdit={() => { const v = window.prompt('Edit sell price for ' + (trade.symbol || 'this trade') + ' (current $' + (trade.sellingPrice ?? 0) + '):'); if (v !== null && v !== '' && !isNaN(Number(v)) && Number(v) >= 0) onSetSellPrice(trade.id, Number(v)); }}>{row}</SwipeableRow>
+      ) : (
+        <View key={trade.id} style={styles.tradeRow}>{row}</View>
       );
     })}
   </GlassCard>;
@@ -674,5 +706,7 @@ const styles = StyleSheet.create({
   buttonText: { color: colors.text, fontWeight: '900' },
   error: { color: colors.red, marginBottom: 4 },
   tradeRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,.07)' },
+  editUnderlay: { position: 'absolute', top: 0, bottom: 0, width: 96, right: 0, backgroundColor: '#35ff9b', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: 22, borderRadius: 14, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 } as const,
+  editBtn: { width: '100%', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: 'transparent', alignItems: 'flex-start' } as const,
   tradeSymbol: { color: colors.text, fontWeight: '900' },
 });
