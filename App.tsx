@@ -444,9 +444,11 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
 }
 
 function TradeLog({ trades, onDelete, onSetSellPrice }: { trades: Trade[]; onDelete: (id: string) => void; onSetSellPrice: (id: string, sellPrice: number) => void }) {
+  const results = trades.map((t) => { const f = calculateTradeFinancials(t); return { id: t.id, symbol: t.symbol || '—', net: f.netProfitLoss ?? 0, date: t.tradeDate, open: f.result === 'open' }; });
   return <GlassCard>
     <Text style={styles.cardTitle}>Trade Log</Text>
     {trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}
+    {results.length >= 2 && <ResultLineChart results={results} />}
     {trades.map((trade) => {
       const f = calculateTradeFinancials(trade);
       const buyV = trade.purchasePrice > 0 ? `$${trade.purchasePrice.toFixed(2)}` : '—';
@@ -537,6 +539,59 @@ function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof 
 function Settings() { return <GlassCard><Text style={styles.cardTitle}>Settings / Rule Engine</Text><Metric label="Timezone" value={localDatabase.settings.timezone} /><Metric label="Market Open" value={localDatabase.settings.marketOpenTime} /><Metric label="Risk Limit" value={`${localDatabase.settings.riskLimitPercent}%`} /><Metric label="Portfolio" value={formatCurrency(localDatabase.settings.portfolioValue)} /></GlassCard>; }
 function GlassCard({ children }: { children: React.ReactNode }) { return <View style={styles.card}>{children}</View>; }
 function Kpi({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'green' | 'red' | 'cyan' | 'yellow' }) { return <GlassCard><Text style={styles.mutedSmall}>{label}</Text><Text style={[styles.kpiValue, { color: colors[tone] }]}>{value}</Text><Text style={styles.mutedSmall}>{detail}</Text></GlassCard>; }
+function ResultLineChart({ results }: { results: { id: string; symbol: string; net: number; date: string; open: boolean }[] }) {
+  const W = 560, H = 180, PAD = 28;
+  const cumulative: number[] = [];
+  let run = 0;
+  for (const r of results) { run += r.net; cumulative.push(run); }
+  const max = Math.max(...cumulative, 1);
+  const min = Math.min(...cumulative, 0);
+  const span = max - min || 1;
+  const n = cumulative.length;
+  const pts: { x: number; y: number; v: number; r: { id: string; symbol: string; net: number; date: string; open: boolean } }[] = cumulative.map((v, i) => {
+    const x = PAD + (i / (n - 1)) * (W - 2 * PAD);
+    const y = H - PAD - ((v - min) / span) * (H - 2 * PAD);
+    return { x, y, v, r: results[i]! };
+  });
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const area = `${line} L${(W - PAD).toFixed(1)},${(H - PAD).toFixed(1)} L${PAD.toFixed(1)},${(H - PAD).toFixed(1)} Z`;
+  const last = pts[pts.length - 1];
+  const dots = pts.map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="${p.r.net >= 0 ? '#35ff9b' : '#ff4d6d'}"><title>${p.r.symbol} · $${p.r.net.toFixed(0)} (${p.r.date})</title></circle>`).join('');
+  const grid = [0.25, 0.5, 0.75, 1].map((t) => {
+    const yv = min + t * span;
+    const y = H - PAD - (t) * (H - 2 * PAD);
+    return `<line x1="${PAD}" x2="${W - PAD}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,.08)" stroke-width="1"/><text x="${W - PAD + 6}" y="${y.toFixed(1) + 4}" fill="rgba(143,166,195,.8)" font-size="10">$${Math.round(yv)}</text>`;
+  }).join('');
+  const svg = `<svg width="100%" viewBox="0 0 ${W} ${H + 20}" style="display:block">
+    <defs>
+      <linearGradient id="resultgrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#45e5ff" stop-opacity=".35"/>
+        <stop offset="100%" stop-color="#45e5ff" stop-opacity="0"/>
+      </linearGradient>
+      <clipPath id="clipres"><rect x="0" y="0" width="${W}" height="${H}"/></clipPath>
+      <style>
+        @keyframes drawline { from { stroke-dashoffset: 1400; } to { stroke-dashoffset: 0; } }
+        #resline { stroke-dasharray: 1400; animation: drawline 1.6s ease-out forwards; }
+        @keyframes fadearea { from { opacity: 0; } to { opacity: 1; } }
+        #resarea { animation: fadearea 1.8s ease-out forwards; }
+      </style>
+    </defs>
+    ${grid}
+    <g clip-path="url(#clipres)">
+      <path id="resarea" d="${area}" fill="url(#resultgrad)"/>
+      <path id="resline" d="${line}" fill="none" stroke="#45e5ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}
+    </g>
+    <text x="${PAD}" y="${H + 16}" fill="rgba(143,166,195,.9)" font-size="10">Cumulative P/L · ${n} trades${last ? ` · net ${last.v >= 0 ? '+' : ''}$${Math.round(last.v)}` : ''}</text>
+  </svg>`;
+  return (
+    <View style={{ marginBottom: 16, borderRadius: 16, borderColor: colors.line, borderWidth: 1, padding: 10, backgroundColor: 'rgba(255,255,255,.03)' }}>
+      <Text style={styles.mutedSmall}>Results Trend (cumulative P/L)</Text>
+      {React.createElement('div', { dangerouslySetInnerHTML: { __html: svg } })}
+    </View>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: string }) { return <View style={styles.metric}><Text style={styles.muted}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
 function BarRow({ label, value, max }: { label: string; value: number; max: number }) { const width = `${Math.min(100, Math.abs(value) / max * 100)}%` as const; return <View style={styles.barWrap}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.barTrack}><View style={[styles.barFill, { width, backgroundColor: value >= 0 ? colors.green : colors.red }]} /></View><Text style={styles.metricValue}>{formatCurrency(value)}</Text></View>; }
 function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) { const { label, ...rest } = props; return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TextInput {...rest} placeholderTextColor={colors.muted} style={styles.input} /></View>; }
