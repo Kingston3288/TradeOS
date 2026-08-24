@@ -358,6 +358,43 @@ export function bestRecommendedSetup(trades: Trade[]): { label: string; winRate:
   return { label: top.label, winRate: top.winRate, sampleSize: top.sampleSize, conditions: top.conditions };
 }
 
+export interface ComboRanking extends CombinedSetup {
+  lossRate: number;
+  breakevenCount: number;
+}
+
+export interface ComboRankings {
+  combos: ComboRanking[];
+  overallWinRate: number;
+  totalClosed: number;
+}
+
+export function rankCombosByWinRate(trades: Trade[], minSampleSize = 2): ComboRankings {
+  const closed = closedTrades(trades);
+  const n = CONDITION_KEYS_TYPED.length;
+  const combos: ComboRanking[] = [];
+  for (let mask = 0; mask < (1 << n); mask++) {
+    const conditions = CONDITION_KEYS_TYPED.filter((_, i) => mask & (1 << i));
+    if (conditions.length === 0) continue;
+    const matched = closed.filter((t) => conditions.every((c) => Boolean(t[c])));
+    if (matched.length < minSampleSize) continue;
+    const wins = matched.filter((t) => calculateTradeFinancials(t).result === 'gain');
+    const losses = matched.filter((t) => calculateTradeFinancials(t).result === 'loss');
+    const breakevens = matched.filter((t) => calculateTradeFinancials(t).result === 'breakeven');
+    combos.push({
+      label: conditions.map((c) => CONDITION_LABELS[c]).join(' + '),
+      winRate: winRate(matched),
+      lossRate: losses.length / matched.length,
+      sampleSize: matched.length,
+      averageProfitLoss: average(matched.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0)),
+      breakevenCount: breakevens.length,
+      conditions: conditions.map((c) => CONDITION_LABELS[c]),
+    });
+  }
+  combos.sort((a, b) => b.winRate - a.winRate || b.sampleSize - a.sampleSize);
+  return { combos, overallWinRate: winRate(closed), totalClosed: closed.length };
+}
+
 /** Parse a trade time string ("3:45 PM", "15:45", "3:45pm") into a 24h hour (0-23), or -1 if invalid. */
 export function parseTradeTimeToHour(tm?: string): number {
   if (!tm) return -1;
@@ -389,6 +426,15 @@ export interface TimeOfDayStat {
 }
 
 /** Win/loss probability bucketed by the trade's logged time-of-day. */
+function to12h(h: number): string {
+  const hr = h % 12 === 0 ? 12 : h % 12;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  return `${hr}:00 ${ampm}`;
+}
+function timeRange(h: number): string {
+  return `${to12h(h)}–${to12h((h + 1) % 24)}`;
+}
+
 export function winRateByTimeOfDay(trades: Trade[]): TimeOfDayStat[] {
   const closed = closedTrades(trades);
   const byHour = new Map<number, Trade[]>();
@@ -402,7 +448,7 @@ export function winRateByTimeOfDay(trades: Trade[]): TimeOfDayStat[] {
     const results = group.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0);
     rows.push({
       hour,
-      label: `${String(hour).padStart(2, '0')}:00–${String(hour).padStart(2, '0')}:59`,
+      label: timeRange(hour),
       trades: group.length,
       winRate: winRate(group),
       netProfitLoss: results.reduce((s, v) => s + v, 0),

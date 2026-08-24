@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, recentForm, winRateByTimeOfDay, winRateByWeekday } from './src/lib/analytics';
+import { analyzeAllConditions, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -389,15 +389,16 @@ function TradeLog({ trades, onDelete, onSetSellPrice }: { trades: Trade[]; onDel
 
 function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof analyzeAllConditions>; stats: ReturnType<typeof buildDashboardStats>; trades: Trade[] }) {
   const { setups, overallWinRate } = findHighProbabilitySetups(trades, 3);
+  const rankings = rankCombosByWinRate(trades, 2);
   const expectancy = computeExpectancy(trades);
   const sizing = computePositionSizing(trades, localDatabase.settings.riskLimitPercent);
   const form = recentForm(trades, 20);
   return <View style={styles.twoCol}>
     {/* Higher-probability set-ups, most important */}
-    <GlassCard><Text style={styles.cardTitle}>High-Probability Setups</Text>
+    <GlassCard><Text style={styles.cardTitle}>Combos: Best → Least (Win / Loss rate)</Text>
       <Metric label="Overall win rate" value={`${formatPercent(overallWinRate)}`} />
-      {setups.length === 0 && <Text style={styles.muted}>Log more closed trades (min 3 per setup) to surface the highest-probability combos.</Text>}
-      {setups.slice(0, 4).map((s) => <View key={s.label} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}>{s.label}</Text><Text style={styles.metricValue}>{formatPercent(s.winRate)} · n={s.sampleSize}</Text></View>)}
+      {rankings.combos.length === 0 && <Text style={styles.muted}>Log more closed trades (min 2 per combo) to rank combinations.</Text>}
+      {rankings.combos.map((s, i) => <View key={s.label} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}><Text style={{ color: colors.green, fontWeight: '900' }}>#{i + 1}</Text> {s.label}</Text><Text style={styles.metricValue}><Text style={{ color: colors.green }}>{formatPercent(s.winRate)}</Text> / <Text style={{ color: colors.red }}>{formatPercent(s.lossRate)}</Text> · n={s.sampleSize}</Text></View>)}
     </GlassCard>
     {/* Edge metrics */}
     <GlassCard><Text style={styles.cardTitle}>Edge & Edge Sizing</Text>

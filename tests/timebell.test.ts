@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeAllConditions, parseTradeTimeToHour, winRateByTimeOfDay, winRateByWeekday } from '../src/lib/analytics';
+import { analyzeAllConditions, parseTradeTimeToHour, rankCombosByWinRate, winRateByTimeOfDay, winRateByWeekday } from '../src/lib/analytics';
 import type { Trade } from '../src/lib/types';
 
 function trade(over: Partial<Trade>): Trade {
@@ -85,5 +85,28 @@ describe('winRateByWeekday', () => {
   });
   it('returns empty if no weekday set', () => {
     expect(winRateByWeekday([trade({})])).toHaveLength(0);
+  });
+});
+
+describe('rankCombosByWinRate', () => {
+  it('ranks combos with win+loss rate and orders best first', () => {
+    const trades = [
+      trade({ emaCrossed: true, fifteenMinutesPassed: true, sellingPrice: 12 }),
+      trade({ emaCrossed: true, fifteenMinutesPassed: true, sellingPrice: 11.5 }),
+      trade({ emaCrossed: true, fifteenMinutesPassed: true, sellingPrice: 8 }),
+      trade({ emaCrossed: false, fifteenMinutesPassed: false, sellingPrice: 8 }),
+    ];
+    const { combos, overallWinRate } = rankCombosByWinRate(trades, 2);
+    expect(overallWinRate).toBeCloseTo(0.5);
+    expect(combos.length).toBeGreaterThan(0);
+    // The 2-combo (EMA+15m) should appear with win+loss rates summing to <=1
+    const combo = combos.find((c) => c.label.includes('15m passed') && c.label.includes('EMA confirmed'));
+    expect(combo).toBeDefined();
+    expect(combo!.winRate + combo!.lossRate).toBeLessThanOrEqual(1);
+    expect(combo!.winRate + combo!.lossRate).toBeGreaterThanOrEqual(0.9);
+    // sorted descending by win rate
+    for (let i = 1; i < combos.length; i++) {
+      expect(combos[i - 1]!.winRate).toBeGreaterThanOrEqual(combos[i]!.winRate);
+    }
   });
 });
