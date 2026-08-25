@@ -326,9 +326,9 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 
         <ScrollView style={styles.main} contentContainerStyle={styles.mainContent}>
           <View style={styles.header}>
-            <View>
+            <View style={styles.headerText}>
               <Text style={styles.eyebrow}>Daily trading command center</Text>
-              <Text style={styles.hero}>Track every setup. Learn what actually wins.</Text>
+              <Text style={[styles.hero, compact && { fontSize: 26, lineHeight: 30 }]}>Track every setup. Learn what actually wins.</Text>
             </View>
             <TouchableOpacity style={styles.primaryButton} onPress={() => setScreen('New Trade')}><Text style={styles.primaryText}>Log New Trade</Text></TouchableOpacity>
           </View>
@@ -407,6 +407,7 @@ function Dashboard({ stats, compact, trades, onNewTrade }: { stats: ReturnType<t
   const hour = new Date().getHours();
   const morning = hour >= 8 && hour < 11;
   const [statModal, setStatModal] = React.useState<{ title: string; rows: Array<{ period: string; value: string; detail?: string; tone: 'green' | 'red' | 'cyan' | 'yellow' | 'muted' }> } | null>(null);
+  const topSetups = findHighProbabilitySetups(trades, 5).setups;
   const p = (period: string, value: string, tone: 'green' | 'red' | 'cyan' | 'yellow' | 'muted', detail?: string) => detail === undefined ? { period, value, tone } : { period, value, tone, detail };
   const modalD = (periods: { daily: PeriodStats; weekly: PeriodStats; monthly: PeriodStats }) => [
     p('Today', formatCurrency(periods.daily.netProfitLoss), periods.daily.netProfitLoss >= 0 ? 'green' : 'red', `${periods.daily.wins}W/${periods.daily.losses}L · ${periods.daily.totalTrades} trades`),
@@ -447,11 +448,7 @@ function Dashboard({ stats, compact, trades, onNewTrade }: { stats: ReturnType<t
         p('This Week', formatCurrency(stats.weekly.averageLosingTrade), 'yellow'),
         p('This Month', formatCurrency(stats.monthly.averageLosingTrade), 'yellow'),
       ] })} />
-      <Kpi label="Rule Discipline" value={formatPercent(stats.ruleDisciplineScore)} tone="green" detail="Checklist adherence" onPress={() => setStatModal({ title: 'Rule Discipline', rows: [
-        p('Today', `${stats.ruleDisciplineScore >= 0 ? '' : ''}—`, 'muted'),
-        p('This Week', `${stats.ruleDisciplineScore >= 0 ? '' : ''}—`, 'muted'),
-        p('This Month', `${stats.ruleDisciplineScore >= 0 ? '' : ''}—`, 'muted'),
-      ] })} />
+      <Kpi label="Rule Discipline" value={formatPercent(stats.ruleDisciplineScore)} tone="green" detail="Checklist adherence" />
     </View>
     {statModal ? <StatsModal title={statModal.title} rows={statModal.rows} onClose={() => setStatModal(null)} /> : null}
     <View style={[styles.twoCol, compact && styles.oneCol, { marginTop: 4 }]}>
@@ -459,10 +456,13 @@ function Dashboard({ stats, compact, trades, onNewTrade }: { stats: ReturnType<t
         {results.length >= 2 ? <ResultLineChart results={results} /> : <GlassCard><Text style={styles.cardTitle}>Results Trend</Text><Text style={styles.muted}>Log 2+ trades to see your cumulative P/L trend here.</Text></GlassCard>}
       </View>
       <View style={{ flex: 1, gap: 16, minWidth: 260 }}>
-        <GlassCard>
-          <Text style={styles.cardTitle}>Best Setup</Text>
-          {stats.bestSetupPattern ? <><Text style={{ fontSize: 22, fontWeight: '900', color: colors.green, marginVertical: 6 }}>{formatPercent(stats.bestSetupPattern.winRate)}</Text><Text style={styles.mutedSmall}>{stats.bestSetupPattern.label} · n={stats.bestSetupPattern.sampleSize}</Text></> : <Text style={styles.muted}>Log more closed trades to surface your best setup.</Text>}
-        </GlassCard>
+        <TouchableOpacity onPress={() => topSetups.length && setStatModal({ title: 'Top Setups (Win Rate)', rows: topSetups.map((s, i) => p(`#${i + 1} · ${s.label}`, formatPercent(s.winRate), s.winRate >= 0.5 ? 'green' : 'yellow', `n=${s.sampleSize}`)) })} activeOpacity={0.85}>
+          <GlassCard>
+            <Text style={styles.cardTitle}>Best Setup {topSetups.length ? '▸' : ''}</Text>
+            {stats.bestSetupPattern ? <><Text style={{ fontSize: 22, fontWeight: '900', color: colors.green, marginVertical: 6 }}>{formatPercent(stats.bestSetupPattern.winRate)}</Text><Text style={styles.mutedSmall}>{stats.bestSetupPattern.label} · n={stats.bestSetupPattern.sampleSize}</Text></> : <Text style={styles.muted}>Log more closed trades to surface your best setup.</Text>}
+            {topSetups.length ? <Text style={[styles.mutedSmall, { marginTop: 6, color: colors.cyan }]}>Tap to see top {Math.min(5, topSetups.length)} setups ▸</Text> : null}
+          </GlassCard>
+        </TouchableOpacity>
         <GlassCard>
           <Text style={styles.cardTitle}>Rule Discipline</Text>
           <View style={styles.barTrack}><View style={[styles.barFill, { width: `${Math.round(stats.ruleDisciplineScore * 100)}%`, backgroundColor: colors.green }]} /></View>
@@ -1224,8 +1224,9 @@ const styles = StyleSheet.create({
   main: { flex: 1 },
   mainContent: { padding: 24, gap: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', alignItems: 'center' },
+  headerText: { flexShrink: 1, minWidth: 0, flexWrap: 'wrap' },
   eyebrow: { color: colors.cyan, textTransform: 'uppercase', letterSpacing: 2, fontSize: 11, fontWeight: '900' },
-  hero: { color: colors.text, fontSize: 38, lineHeight: 42, fontWeight: '900', maxWidth: 760 },
+  hero: { color: colors.text, fontSize: 38, lineHeight: 42, fontWeight: '900', maxWidth: 760, flexShrink: 1, flexWrap: 'wrap' },
   card: { backgroundColor: colors.panel, borderColor: colors.line, borderWidth: 1, borderRadius: 24, padding: 18, marginBottom: 16, ...shadow },
   cardTitle: { color: colors.text, fontSize: 20, fontWeight: '900', marginBottom: 8 },
   muted: { color: colors.muted, lineHeight: 21 },
