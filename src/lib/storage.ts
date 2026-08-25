@@ -33,6 +33,8 @@ export function createTradeDraft(timezone = demoSettings.timezone): Trade {
     contractCount: 1,
     purchasePrice: 0,
     sellingPrice: null,
+    stopLoss: null,
+    targetPrice: null,
     fees: 0,
     status: 'open',
     notes: '',

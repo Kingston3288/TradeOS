@@ -37,6 +37,10 @@ export interface Trade {
   vwapDirection?: 'up' | 'down';
   /** MACD trend direction */
   macdTrend?: 'rising' | 'falling';
+  /** Stop-loss price (for risk/reward gate) */
+  stopLoss?: number | null;
+  /** Profit-target price (for risk/reward gate) */
+  targetPrice?: number | null;
 }
 
 export interface Settings {

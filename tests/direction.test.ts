@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { daysHeld, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from '../src/lib/analytics';
+import { daysHeld, probGrade, riskReward, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from '../src/lib/analytics';
 import type { Trade } from '../src/lib/types';
 
 function trade(over: Partial<Trade>): Trade {
@@ -78,5 +78,31 @@ describe('winRateByMarketCombo', () => {
     const rows = winRateByMarketCombo([trade({})]); // market=up, type=call, vwap/macd missing
     expect(rows.length).toBe(1);
     expect(rows[0]!.label).toContain('—'); // placeholder for missing VWAP/MACD
+  });
+});
+
+describe('probGrade', () => {
+  it('grades probability into green/amber/red bands', () => {
+    expect(probGrade(72)).toBe('green');
+    expect(probGrade(60)).toBe('green');
+    expect(probGrade(50)).toBe('amber');
+    expect(probGrade(44)).toBe('red');
+  });
+});
+
+describe('riskReward', () => {
+  it('computes ratio and passes the 1:1.5 quality gate', () => {
+    const good = riskReward(trade({ purchasePrice: 10, targetPrice: 13, stopLoss: 8 }));
+    expect(good.ratio).toBeCloseTo(1.5); // reward 3 / risk 2
+    expect(good.passes).toBe(true);
+    expect(good.reward).toBeCloseTo(3);
+    expect(good.risk).toBeCloseTo(2);
+    const bad = riskReward(trade({ purchasePrice: 10, targetPrice: 11, stopLoss: 8 }));
+    expect(bad.ratio).toBeCloseTo(0.5);
+    expect(bad.passes).toBe(false);
+  });
+  it('returns null ratio when stop or target missing', () => {
+    expect(riskReward(trade({ purchasePrice: 10 })).ratio).toBeNull();
+    expect(riskReward(trade({ purchasePrice: 10, stopLoss: 8 })).ratio).toBeNull();
   });
 });

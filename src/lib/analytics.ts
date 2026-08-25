@@ -362,24 +362,51 @@ export function bestRecommendedSetup(trades: Trade[]): { label: string; winRate:
  * Predict success % for a prospective trade by matching its currently-selected
  * conditions to the closest historical combo (exact match first, then the
  * best-known setup). Falls back to overall win rate when no match exists.
+ * Returns confidence (High/Med/Low) based on sample size.
  */
-export function predictSuccessRate(draft: Trade, trades: Trade[]): { percent: number; matched: string; sampleSize: number } {
+export function predictSuccessRate(draft: Trade, trades: Trade[]): { percent: number; matched: string; sampleSize: number; confidence: 'High' | 'Med' | 'Low' } {
   const { combos, overallWinRate } = rankCombosByWinRate(trades, 2);
   const activeConditions = CONDITION_KEYS_TYPED.filter((c) => Boolean(draft[c]));
   const activeLabels = activeConditions.map((c) => CONDITION_LABELS[c]);
+  const conf = (n: number): 'High' | 'Med' | 'Low' => (n >= 10 ? 'High' : n >= 4 ? 'Med' : 'Low');
   if (activeConditions.length === 0) {
-    return { percent: Math.round(overallWinRate * 100), matched: 'All trades (no condition selected)', sampleSize: rankCombosByWinRate(trades, 2).totalClosed };
+    return { percent: Math.round(overallWinRate * 100), matched: 'All trades (no condition selected)', sampleSize: rankCombosByWinRate(trades, 2).totalClosed, confidence: conf(rankCombosByWinRate(trades, 2).totalClosed) };
   }
   // Exact match on the set of active conditions
   const exact = combos.find((c) => {
     const sameSize = c.conditions.length === activeLabels.length;
     return sameSize && activeLabels.every((l) => c.conditions.includes(l));
   });
-  if (exact) return { percent: Math.round(exact.winRate * 100), matched: exact.label, sampleSize: exact.sampleSize };
+  if (exact) return { percent: Math.round(exact.winRate * 100), matched: exact.label, sampleSize: exact.sampleSize, confidence: conf(exact.sampleSize) };
   // Otherwise use the best-known combo win rate as a proxy
   const best = combos[0];
-  if (best) return { percent: Math.round(best.winRate * 100), matched: `closest: ${best.label}`, sampleSize: best.sampleSize };
-  return { percent: Math.round(overallWinRate * 100), matched: 'Overall win rate', sampleSize: 0 };
+  if (best) return { percent: Math.round(best.winRate * 100), matched: `closest: ${best.label}`, sampleSize: best.sampleSize, confidence: conf(best.sampleSize) };
+  return { percent: Math.round(overallWinRate * 100), matched: 'Overall win rate', sampleSize: 0, confidence: 'Low' };
+}
+
+/** Probability grade: which color band a percent falls into (green/amber/red). */
+export function probGrade(pct: number): 'green' | 'amber' | 'red' {
+  if (pct >= 60) return 'green';
+  if (pct >= 45) return 'amber';
+  return 'red';
+}
+
+/**
+ * Risk / reward: reward = |target - entry|, risk = |entry - stop|.
+ * Returns ratio, and whether it clears the quality gate (RR >= 1.5).
+ */
+export function riskReward(trade: Pick<Trade, 'purchasePrice' | 'targetPrice' | 'stopLoss' | 'buyingType'>): { ratio: number | null; reward: number; risk: number; passes: boolean } {
+  const entry = trade.purchasePrice;
+  const target = trade.targetPrice;
+  const stop = trade.stopLoss;
+  if (!entry || entry <= 0 || target === null || target === undefined || target <= 0 || stop === null || stop === undefined || stop <= 0) {
+    return { ratio: null, reward: 0, risk: 0, passes: false };
+  }
+  const reward = Math.abs(target - entry);
+  const risk = Math.abs(entry - stop);
+  if (risk === 0) return { ratio: null, reward, risk: 0, passes: false };
+  const ratio = reward / risk;
+  return { ratio, reward, risk, passes: ratio >= 1.5 };
 }
 
 export interface ComboRanking extends CombinedSetup {

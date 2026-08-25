@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, PanResponder, Animated, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
+import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, probGrade, riskReward, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -254,9 +254,10 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   const [pendingSave, setPendingSave] = useState<Trade | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const prediction = useMemo(
-    () => (pendingSave ? predictSuccessRate(pendingSave, trades) : { percent: 0, matched: '', sampleSize: 0 }),
+    () => (pendingSave ? predictSuccessRate(pendingSave, trades) : { percent: 0, matched: '', sampleSize: 0, confidence: 'Low' as const }),
     [pendingSave, trades],
   );
+  const rr = useMemo(() => (pendingSave ? riskReward(pendingSave) : { ratio: null, reward: 0, risk: 0, passes: false }), [pendingSave]);
 
   function openSaveConfirm(t: Trade) { setPendingSave(t); setConfirmVisible(true); }
   function closeSaveConfirm() { setConfirmVisible(false); }
@@ -364,10 +365,24 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
               <Text style={styles.modalTitle}>Save this trade?</Text>
               {pendingSave.symbol ? <Text style={[styles.mutedSmall, { marginBottom: 8 }]}>{pendingSave.symbol.toUpperCase()} · {pendingSave.buyingType.toUpperCase()} · {pendingSave.contractCount} contracts</Text> : null}
               <View style={styles.predBox}>
-                <Text style={styles.predLabel}>Predicted win success (matched conditions)</Text>
-                <View style={[styles.predTrack, { height: 22 }]}><View style={[styles.predFill, { width: `${Math.min(100, prediction.percent)}%`, height: 22, shadowColor: '#35ff9b', shadowOpacity: .7, shadowRadius: 12, shadowOffset: { width: 0, height: 0 } }]} /></View>
-                <Text style={styles.predValue}>{prediction.percent}% <Text style={styles.mutedSmall}>· {prediction.matched} · n={prediction.sampleSize}</Text></Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={styles.predLabel}>Predicted win success (matched conditions)</Text>
+                  <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 99, backgroundColor: (prediction.confidence === 'High' ? colors.green : prediction.confidence === 'Med' ? colors.yellow : colors.red) + '22' }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: prediction.confidence === 'High' ? colors.green : prediction.confidence === 'Med' ? colors.yellow : colors.red }}>{prediction.confidence} confidence</Text>
+                  </View>
+                </View>
+                {(() => { const c = probGrade(prediction.percent); const track = c === 'green' ? colors.green : c === 'amber' ? colors.yellow : colors.red; return (
+                  <View style={[styles.predTrack, { height: 22 }]}><View style={[styles.predFill, { width: `${Math.min(100, prediction.percent)}%`, height: 22, backgroundColor: track, shadowColor: track, shadowOpacity: .7, shadowRadius: 12, shadowOffset: { width: 0, height: 0 } }]} /></View>
+                ); })()}
+                <Text style={styles.predValue}><Text style={{ color: probGrade(prediction.percent) === 'green' ? colors.green : probGrade(prediction.percent) === 'amber' ? colors.yellow : colors.red }}>{prediction.percent}%</Text> <Text style={styles.mutedSmall}>· {prediction.matched} · n={prediction.sampleSize}</Text></Text>
               </View>
+              {rr.ratio !== null && (
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+                  <Text style={{ color: rr.passes ? colors.green : colors.red, fontWeight: '900' }}>R:R {rr.ratio.toFixed(2)}</Text>
+                  <Text style={[styles.mutedSmall, { flex: 1 }]}>Risk ${rr.risk.toFixed(2)} → Reward ${rr.reward.toFixed(2)}</Text>
+                </View>
+              )}
+              {prediction.percent < 45 && <Text style={[styles.error, { marginBottom: 10 }]}>⚠ This setup has won only {prediction.percent}% historically — proceed with caution and small size.</Text>}
               <Text style={styles.mutedSmall}>Based on your closest matching condition combo from your trade history.</Text>
               <View style={styles.modalActions}>
                 <TouchableOpacity style={styles.cancelButton} onPress={closeSaveConfirm}><Text style={styles.buttonText}>No, cancel</Text></TouchableOpacity>
@@ -460,6 +475,8 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
       <Field label="Contracts" value={draft.contractCount === 1 ? '' : String(draft.contractCount)} placeholder="e.g. 1" keyboardType="numeric" onChangeText={(v) => update({ contractCount: Math.max(1, Math.round(parseFloat(v) || 1)) })} />
       <MoneyField label="Purchase Price ($)" initial={draft.purchasePrice} placeholder="e.g. 2.50" onChange={(n) => update({ purchasePrice: n ?? 0 })} />
       <MoneyField label="Selling Price ($)" initial={draft.sellingPrice} placeholder="e.g. 3.25" allowNull onChange={(n) => update({ sellingPrice: n })} />
+      <MoneyField label="Stop Loss ($)" initial={draft.stopLoss ?? null} placeholder="e.g. 2.20" allowNull onChange={(n) => update({ stopLoss: n })} />
+      <MoneyField label="Target Price ($)" initial={draft.targetPrice ?? null} placeholder="e.g. 3.50" allowNull onChange={(n) => update({ targetPrice: n })} />
     </View>
     <View style={styles.resultBox}><Text style={styles.mutedSmall}>Auto Result</Text><Text style={[styles.resultText, { color: financials.result === 'loss' ? colors.red : financials.result === 'open' ? colors.yellow : colors.green }]}>{financials.result === 'open' ? 'Open trade' : `${formatCurrency(financials.netProfitLoss ?? 0)} · ${(financials.profitLossPercentage ?? 0).toFixed(1)}%`}</Text></View>
     {errors.length > 0 && touched && errors.slice(0, 1).map((e) => <Text key={e} style={styles.error}>{e}</Text>)}
@@ -547,6 +564,7 @@ function TradeLog({ trades, onOpenEdit, onDelete }: { trades: Trade[]; onOpenEdi
             {chip(trade.weekday ?? '—', !!trade.weekday)}
           </View>
           {(trade.notes || trade.strategyTag) && <Text style={[styles.mutedSmall, { marginTop: 8 }]}>{(trade.strategyTag ? trade.strategyTag + ' · ' : '') + (trade.notes || '')}</Text>}
+          {(trade.stopLoss != null || trade.targetPrice != null) && <Text style={[styles.mutedSmall, { marginTop: 8, color: colors.cyan }]}>Stop ${trade.stopLoss != null ? trade.stopLoss.toFixed(2) : '—'} · Target ${trade.targetPrice != null ? trade.targetPrice.toFixed(2) : '—'}</Text>}
         </View>
       );
       const comp = trade.status === 'closed' ? (
