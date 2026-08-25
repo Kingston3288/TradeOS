@@ -213,7 +213,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   const repo = useMemo(() => createSupabaseTradeRepository(), []);
   const { width } = useWindowDimensions();
   const compact = width < 780;
-  const stats = useMemo(() => buildDashboardStats(trades, new Date().toISOString().slice(0, 10)), [trades]);
+  const stats = useMemo(() => buildDashboardStats(trades, new Date().toISOString().slice(0, 10), localDatabase.settings.timezone || 'America/New_York'), [trades]);
   const analyses = useMemo(() => analyzeAllConditions(trades), [trades]);
 
   // Load trades from Supabase once the user's session is approved (ownerEmail is set).
@@ -885,12 +885,13 @@ function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote
   const [err, setErr] = React.useState('');
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
+    let alive = true;
     import('lightweight-charts').then((mod: any) => {
       try {
-        const root = document.getElementById('techchart-root') as HTMLDivElement | null;
-        if (!root) return;
+        const root = document.getElementById(`techchart-${symbol}`) as HTMLDivElement | null;
+        if (!root || !alive) return;
         root.innerHTML = '';
-        const c = mod.createChart(root, { width: root.clientWidth || 600, height: 440, layout: { background: { color: '#0b1330' }, textColor: '#8fa6c3' }, grid: { vertLines: { color: 'rgba(255,255,255,.06)' }, horzLines: { color: 'rgba(255,255,255,.06)' } }, rightPriceScale: { borderColor: 'rgba(255,255,255,.12)' }, timeScale: { borderColor: 'rgba(255,255,255,.12)' } });
+        const c = mod.createChart(root, { autoSize: true, width: root.clientWidth || 640, height: 460, layout: { background: { color: '#0b1330' }, textColor: '#8fa6c3' }, grid: { vertLines: { color: 'rgba(255,255,255,.06)' }, horzLines: { color: 'rgba(255,255,255,.06)' } }, rightPriceScale: { borderColor: 'rgba(255,255,255,.12)' }, timeScale: { borderColor: 'rgba(255,255,255,.12)' } });
         const candle = c.addSeries(mod.CandlestickSeries, { upColor: '#35ff9b', downColor: '#ff4d6d', wickUpColor: '#35ff9b', wickDownColor: '#ff4d6d', borderVisible: false });
         candle.setData(quote.candles.map((x) => ({ time: x.time as any, open: x.open, high: x.high, low: x.low, close: x.close })));
         const ema = (period: number) => {
@@ -917,20 +918,21 @@ function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote
         }
         macd.setData(macdData.map((d) => ({ time: d.time as any, value: d.value })));
         c.fitContent();
-      } catch (e) { setErr(String(e)); }
+        c.timeScale().fitContent();
+      } catch (e) { if (alive) setErr(String(e)); }
     });
-    return () => { const root = document.getElementById('techchart-root'); if (root) root.innerHTML = ''; };
-  }, [symbol, quote]);
+    return () => { alive = false; };
+  }, [symbol]);
   return (
     <Modal transparent visible animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
-        <View style={[styles.modalCard, { maxWidth: 760 }]}>
+        <View style={[styles.modalCard, { maxWidth: 820 }]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={styles.modalTitle}>{symbol} — Technical Chart</Text>
             <TouchableOpacity onPress={onClose}><Text style={{ color: colors.muted }}>✕</Text></TouchableOpacity>
           </View>
           <Text style={[styles.mutedSmall, { marginBottom: 8 }]}>Candles · 9 EMA (cyan) · 20 EMA (violet) · VWAP (amber) · MACD</Text>
-          {typeof document !== 'undefined' && <div id="techchart-root" style={{ width: '100%', borderRadius: 12, overflow: 'hidden' }} />}
+          <div id={`techchart-${symbol}`} style={{ width: '100%', height: 460, borderRadius: 12, overflow: 'hidden', backgroundColor: '#0b1330' }} />
           {err ? <Text style={styles.error}>{err}</Text> : null}
         </View>
       </View>

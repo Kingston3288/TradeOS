@@ -55,18 +55,16 @@ function summarizePeriod(trades: Trade[]): PeriodStats {
   };
 }
 
-function parseTradeDate(tradeDate: string): Date {
-  return new Date(`${tradeDate}T12:00:00Z`);
-}
-
-function isWithinDays(trade: Trade, currentDate: string, days: number): boolean {
-  const current = parseTradeDate(currentDate).getTime();
-  const candidate = parseTradeDate(trade.tradeDate).getTime();
-  const diffDays = (current - candidate) / 86_400_000;
+function isWithinDays(trade: Trade, currentDate: string, days: number, timezone = 'America/New_York'): boolean {
+  const current = dateInTz(currentDate + 'T12:00:00Z', timezone);
+  const candidate = dateInTz(trade.closedAt || trade.createdAt || trade.tradeDate, timezone);
+  const cMs = new Date(current + 'T12:00:00Z').getTime();
+  const candMs = new Date(candidate + 'T12:00:00Z').getTime();
+  const diffDays = (cMs - candMs) / 86_400_000;
   return diffDays >= 0 && diffDays < days;
 }
 
-export function buildDashboardStats(trades: Trade[], currentDate = new Date().toISOString().slice(0, 10)) {
+export function buildDashboardStats(trades: Trade[], currentDate = new Date().toISOString().slice(0, 10), timezone = 'America/New_York') {
   const closed = closedTrades(trades);
   const winningValues = closed.map(calculateTradeFinancials).map((r) => r.netProfitLoss ?? 0).filter((value) => value > 0);
   const losingValues = closed.map(calculateTradeFinancials).map((r) => r.netProfitLoss ?? 0).filter((value) => value < 0);
@@ -77,11 +75,14 @@ export function buildDashboardStats(trades: Trade[], currentDate = new Date().to
     trade.withinPortfolioRiskLimit,
   ]);
   const patterns = getBestAndWorstPatterns(trades);
+  // "Today" resolved in the user's timezone, and trades bucketed by their CLOSE date
+  // (not open date) so a trade closed today but opened earlier counts toward today.
+  const today = dateInTz(new Date(currentDate + 'T12:00:00Z'), timezone);
 
   return {
-    daily: summarizePeriod(trades.filter((trade) => trade.tradeDate === currentDate)),
-    weekly: summarizePeriod(trades.filter((trade) => isWithinDays(trade, currentDate, 7))),
-    monthly: summarizePeriod(trades.filter((trade) => isWithinDays(trade, currentDate, 31))),
+    daily: summarizePeriod(closedTrades(trades).filter((t) => dateInTz(t.closedAt || t.createdAt || t.tradeDate, timezone) === today)),
+    weekly: summarizePeriod(trades.filter((trade) => isWithinDays(trade, currentDate, 7, timezone))),
+    monthly: summarizePeriod(trades.filter((trade) => isWithinDays(trade, currentDate, 31, timezone))),
     winRate: winRate(closed),
     totalWins: winningValues.length,
     totalLosses: losingValues.length,
@@ -92,6 +93,17 @@ export function buildDashboardStats(trades: Trade[], currentDate = new Date().to
     worstSetupPattern: patterns.worst,
     summary: buildAiSummary(trades),
   };
+}
+
+/** Format an ISO timestamp as YYYY-MM-DD in a given IANA timezone. */
+function dateInTz(iso: string | Date, tz: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso).slice(0, 10);
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  } catch {
+    return String(iso).slice(0, 10);
+  }
 }
 
 export function analyzeCondition(trades: Trade[], key: keyof Trade, label: string): ConditionAnalysis {

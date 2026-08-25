@@ -88,7 +88,10 @@ describe('dashboard and setup patterns', () => {
 
   it('builds dashboard stats for P/L, wins/losses, averages, and rule discipline', () => {
     const stats = buildDashboardStats(trades, '2026-08-13');
-    expect(stats.daily.netProfitLoss).toBe(0);
+    // Daily P/L reflects trades CLOSED on the given day (createdAt in NY = 08-13 here),
+    // not filtered to 0 — this was previously a $0 bug.
+    expect(stats.daily.totalTrades).toBe(3);
+    expect(stats.daily.netProfitLoss).toBeGreaterThan(0);
     expect(stats.weekly.totalTrades).toBe(3);
     expect(stats.totalWins).toBe(2);
     expect(stats.totalLosses).toBe(1);

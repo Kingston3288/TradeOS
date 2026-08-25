@@ -50,9 +50,6 @@ Deno.serve(async (req) => {
     const result = j?.chart?.result?.[0]
     const meta = result?.meta
     const price = meta?.regularMarketPrice
-    const prev = meta?.chartPreviousClose ?? meta?.previousClose
-    const pct = price && prev ? ((price - prev) / prev) * 100 : 0
-    const change = price && prev ? price - prev : 0
     if (!price) throw new Error('no price')
 
     // Build OHLCV history for the chart.
@@ -65,6 +62,18 @@ Deno.serve(async (req) => {
         if (o == null || h == null || l == null || c == null) continue
         candles.push({ time: t[i], open: o, high: h, low: l, close: c })
       }
+    }
+
+    // Daily change = last close vs previous trading day's close (from the candles),
+    // NOT meta.chartPreviousClose (which is the close before the whole range — often
+    // months old for a 6mo window, producing a wrong "daily" gain).
+    let change = 0
+    let pct = 0
+    if (candles.length >= 2) {
+      const last = candles[candles.length - 1]!
+      const previous = candles[candles.length - 2]!
+      change = Number((last.close - previous.close).toFixed(2))
+      pct = previous.close ? (change / previous.close) * 100 : 0
     }
 
     cache.set(symbol, { price, pct, time: Date.now() })
