@@ -6,6 +6,7 @@ import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashb
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
+import { uuid } from './src/lib/uuid';
 import { colors, shadow } from './src/theme';
 import { supabase, checkApprovedStatus, OWNER_EMAIL } from './src/lib/supabase';
 import { createSupabaseTradeRepository, saveAnalyticsSnapshot } from './src/lib/supabaseTradeRepository';
@@ -233,7 +234,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 
   async function saveDraft() {
     const computed = calculateTradeFinancials(draft);
-    const nextTrade: Trade = { ...draft, id: draft.id && draft.id !== 'draft' ? draft.id : crypto.randomUUID(), createdAt: draft.createdAt || new Date().toISOString(), status: computed.status };
+    const nextTrade: Trade = { ...draft, id: draft.id && draft.id !== 'draft' ? draft.id : uuid(), createdAt: draft.createdAt || new Date().toISOString(), status: computed.status };
     const errors = validateTradeInput(nextTrade);
     if (errors.length) return;
     try {
@@ -260,7 +261,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   function openSaveConfirm(t: Trade) { setPendingSave(t); setConfirmVisible(true); }
   function closeSaveConfirm() { setConfirmVisible(false); }
   function confirmSave() { if (pendingSave) { /* persist the pending draft */ const t = pendingSave; setPendingSave(null); setConfirmVisible(false); saveDraftToRepo(t); } }
-  async function saveDraftToRepo(t: Trade) { const computed = calculateTradeFinancials(t); const tr: Trade = { ...t, id: t.id && t.id !== 'draft' ? t.id : crypto.randomUUID(), createdAt: t.createdAt || new Date().toISOString(), ...(computed.status === 'closed' && !t.closedAt ? { closedAt: new Date().toISOString() } : {}), status: computed.status }; const errors = validateTradeInput(tr); if (errors.length) return; try { const userId = (await supabase.auth.getUser()).data.user?.id; if (!userId) { setDbError('Not signed in.'); return; } const saved = await repo.saveTrade(userId, tr); setTrades((c) => [saved, ...c.filter((x) => x.id !== saved.id)]); setDraft({ ...createEmptyDraft(), id: 'draft' }); setScreen('Trade Log'); try { await saveAnalyticsSnapshot(userId, 'all', { expectancy: computeExpectancy([saved, ...trades]).expectancy }); } catch {} } catch (e) { setDbError('Failed to save trade. ' + String((e as any)?.message || e)); } }
+  async function saveDraftToRepo(t: Trade) { const computed = calculateTradeFinancials(t); const tr: Trade = { ...t, id: t.id && t.id !== 'draft' ? t.id : uuid(), createdAt: t.createdAt || new Date().toISOString(), ...(computed.status === 'closed' && !t.closedAt ? { closedAt: new Date().toISOString() } : {}), status: computed.status }; const errors = validateTradeInput(tr); if (errors.length) return; try { const userId = (await supabase.auth.getUser()).data.user?.id; if (!userId) { setDbError('Not signed in.'); return; } const saved = await repo.saveTrade(userId, tr); setTrades((c) => [saved, ...c.filter((x) => x.id !== saved.id)]); setDraft({ ...createEmptyDraft(), id: 'draft' }); setScreen('Trade Log'); try { await saveAnalyticsSnapshot(userId, 'all', { expectancy: computeExpectancy([saved, ...trades]).expectancy }); } catch {} } catch (e) { setDbError('Failed to save trade. ' + String((e as any)?.message || e)); } }
 
   function deleteTrade(id: string) { setDeleteConfirmId(id); }
   function cancelDelete() { setDeleteConfirmId(null); }
