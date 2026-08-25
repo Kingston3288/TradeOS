@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, PanResponder, Animated, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
+import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -308,6 +308,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
             </View>
             <Text style={[styles.mutedSmall, { marginTop: 4, fontSize: 11 }]} numberOfLines={1}>{ownerEmail}</Text>
           </View>
+          <TickerStrip trades={trades} />
           <View style={[styles.nav, compact && styles.navCompact]}>
             {screens.map((item) => (
               <TouchableOpacity key={item} onPress={() => setScreen(item)} style={[styles.navItem, screen === item && styles.navActive]}>
@@ -386,7 +387,11 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
 function Dashboard({ stats, compact, trades }: { stats: ReturnType<typeof buildDashboardStats>; compact: boolean; trades: Trade[] }) {
   const hasTrades = (stats.daily.totalTrades || stats.weekly.totalTrades || stats.monthly.totalTrades) > 0;
   const results = trades.map((t) => { const f = calculateTradeFinancials(t); return { id: t.id, symbol: t.symbol || '—', net: f.netProfitLoss ?? 0, date: t.tradeDate, open: f.result === 'open' }; });
+  const openCount = trades.filter((t) => t.status === 'open').length;
+  const hour = new Date().getHours();
+  const morning = hour >= 8 && hour < 11;
   return <View>
+    <NotifierBanner morning={morning} openCount={openCount} hasTrades={hasTrades} />
     {!hasTrades && (
       <View style={[styles.card, { marginBottom: 16 }]}>
         <Text style={styles.cardTitle}>Welcome — no trades yet</Text>
@@ -498,35 +503,58 @@ function SwipeableRow({ onEdit, children }: { onEdit: () => void; children: Reac
 }
 
 function TradeLog({ trades, onOpenEdit, onDelete }: { trades: Trade[]; onOpenEdit: (t: Trade) => void; onDelete: (id: string) => void }) {
+  const [expandedId, setExpandedId] = React.useState<string | null>(null);
   const results = trades.map((t) => { const f = calculateTradeFinancials(t); return { id: t.id, symbol: t.symbol || '—', net: f.netProfitLoss ?? 0, date: t.tradeDate, open: f.result === 'open' }; });
+  const chip = (label: string, on: boolean | string) => (
+    <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 99, borderWidth: 1, borderColor: on ? 'rgba(53,255,155,.5)' : colors.line, backgroundColor: on ? 'rgba(53,255,155,.12)' : 'rgba(255,255,255,.04)' }}>
+      <Text style={{ fontSize: 11, fontWeight: '800', color: on ? colors.green : colors.muted }}>{label}</Text>
+    </View>
+  );
   return <GlassCard>
     <Text style={styles.cardTitle}>Trade Log</Text>
     {trades.length === 0 && <Text style={styles.muted}>No trades yet. Log your first trade in "New Trade".</Text>}
     {results.length >= 2 && <ResultLineChart results={results} />}
-    <Text style={styles.mutedSmall}>Tip: tap ✎ to edit a trade. Swipe a closed trade left for quick edit.</Text>
+    <Text style={styles.mutedSmall}>Tip: tap a trade to expand details · ✎ to edit · ✕ to delete · swipe closed trade left for quick edit.</Text>
     {trades.map((trade) => {
       const f = calculateTradeFinancials(trade);
       const buyV = trade.purchasePrice > 0 ? `$${trade.purchasePrice.toFixed(2)}` : '—';
       const sellV = trade.sellingPrice !== null && trade.sellingPrice !== undefined ? `$${trade.sellingPrice.toFixed(2)}` : null;
+      const expanded = expandedId === trade.id;
       const row = (
         <>
-          <View style={{ flex: 1 }}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setExpandedId(expanded ? null : trade.id)}>
             <Text style={styles.tradeSymbol}>{trade.symbol || '—'} · {trade.buyingType.toUpperCase()}</Text>
             <Text style={styles.mutedSmall}>{trade.tradeDate} · {trade.marketExcitement} · {trade.contractCount} contracts</Text>
             <Text style={styles.mutedSmall}>Buy: {buyV}</Text>
             {trade.tradeTime ? <Text style={styles.mutedSmall}>Time: {trade.tradeTime}</Text> : null}
             {sellV !== null && <Text style={[styles.mutedSmall, { color: colors.green }]}>Sell: {sellV}</Text>}
-          </View>
+          </TouchableOpacity>
           <Text style={{ color: f.result === 'loss' ? colors.red : f.result === 'open' ? colors.yellow : colors.green, fontWeight: '900' }}>{f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</Text>
-          <TouchableOpacity onPress={() => onOpenEdit(trade)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.cyan, fontSize: 11 }}>✎ Edit</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => onOpenEdit(trade)} style={{ marginLeft: 12, paddingHorizontal: 8 }}><Text style={{ color: colors.cyan, fontSize: 11 }}>✎</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => onDelete(trade.id)} style={{ marginLeft: 8, paddingHorizontal: 6 }}><Text style={{ color: colors.red }}>✕</Text></TouchableOpacity>
         </>
       );
-      return trade.status === 'closed' ? (
+      const detail = expanded && (
+        <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.07)' }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {chip('15m passed', trade.fifteenMinutesPassed)}
+            {chip('15m HL', trade.entryRespectsFifteenMinuteHighLow)}
+            {chip('EMA', trade.emaCrossed)}
+            {chip('Risk', trade.withinPortfolioRiskLimit)}
+            {chip('Closing bell', trade.closingBell ?? false)}
+            {chip(`VWAP ${trade.vwapDirection ?? '—'}`, trade.vwapDirection === 'up')}
+            {chip(`MACD ${trade.macdTrend ?? '—'}`, trade.macdTrend === 'rising')}
+            {chip(trade.weekday ?? '—', !!trade.weekday)}
+          </View>
+          {(trade.notes || trade.strategyTag) && <Text style={[styles.mutedSmall, { marginTop: 8 }]}>{(trade.strategyTag ? trade.strategyTag + ' · ' : '') + (trade.notes || '')}</Text>}
+        </View>
+      );
+      const comp = trade.status === 'closed' ? (
         <SwipeableRow key={trade.id} onEdit={() => onOpenEdit(trade)}>{row}</SwipeableRow>
       ) : (
         <View key={trade.id} style={styles.tradeRow}>{row}</View>
       );
+      return <View key={trade.id + '-wrap'}>{comp}{detail}</View>;
     })}
   </GlassCard>;
 }
@@ -553,6 +581,11 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
       <View style={[styles.kpiGrid, compact && styles.oneCol]}>
         {hero.map((h) => <View key={h.label} style={{ flex: 1, minWidth: 160, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.03)' }}><Text style={styles.mutedSmall}>{h.label}</Text><CountUp value={h.value} color={toneColor(h.tone)} /><Text style={styles.mutedSmall}>{h.detail}</Text></View>)}
       </View>
+    </GlassCard>
+    {/* Directional market combo */}
+    <GlassCard><Text style={styles.cardTitle}>Top Winning Combos (Market × VWAP × MACD × Type)</Text>
+      {winRateByMarketCombo(trades).length === 0 && <Text style={styles.muted}>Log closed trades with market/VWAP/MACD to see your strongest direction combo.</Text>}
+      {winRateByMarketCombo(trades).slice(0, 6).map((c, i) => <View key={c.label} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}><Text style={{ color: colors.cyan, fontWeight: '900' }}>#{i + 1}</Text> {c.label} · n={c.trades}</Text><Text style={styles.metricValue}><Text style={{ color: colors.green }}>{formatPercent(c.winRate)}</Text> / <Text style={{ color: colors.red }}>{formatPercent(c.lossRate)}</Text></Text></View>)}
     </GlassCard>
     {/* Higher-probability set-ups, most important */}
     <GlassCard><Text style={styles.cardTitle}>Combos: Best → Least (Win / Loss rate)</Text>
@@ -617,6 +650,12 @@ function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof 
     a.href = url; a.download = `tradeos-trades-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
+  function exportPdf() {
+    const rows = trades.map((t) => { const f = calculateTradeFinancials(t); return `<tr><td>${t.tradeDate}</td><td>${t.symbol || '—'}</td><td>${t.buyingType.toUpperCase()}</td><td>${t.contractCount}</td><td>$${(t.purchasePrice || 0).toFixed(2)}</td><td>${t.sellingPrice !== null ? '$' + t.sellingPrice.toFixed(2) : '—'}</td><td style="color:${f.result === 'loss' ? '#ff4d6d' : f.result === 'gain' ? '#35ff9b' : '#ffcc66'}">${f.result === 'open' ? 'OPEN' : formatCurrency(f.netProfitLoss ?? 0)}</td></tr>`; }).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>TradeOS — Weekly Review</title><style>body{font-family:Inter,system-ui,sans-serif;color:#0b1220;padding:28px}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:14px}th,td{padding:8px;text-align:left;border-bottom:1px solid #e2e8f0;font-size:13px}th{color:#5b6b82;text-transform:uppercase;font-size:11px}.kpis{display:flex;gap:16px;margin:16px 0}.kpi{background:#f1f5f9;border-radius:12px;padding:14px}.kpi small{color:#5b6b82}.kpi b{display:block;font-size:20px}</style></head><body><h1>TradeOS — Weekly Review</h1><div class="kpis"><div class="kpi"><small>Net P/L This Week</small><b>${formatCurrency(stats.weekly.netProfitLoss)}</b></div><div class="kpi"><small>Win Rate</small><b>${formatPercent(stats.winRate)}</b></div><div class="kpi"><small>Trades</small><b>${stats.weekly.totalTrades}</b></div><div class="kpi"><small>Avg Win / Loss</small><b>${formatCurrency(stats.averageWinningTrade)} / ${formatCurrency(stats.averageLosingTrade)}</b></div></div><table><thead><tr><th>Date</th><th>Sym</th><th>Type</th><th>Contracts</th><th>Buy</th><th>Sell</th><th>P/L</th></tr></thead><tbody>${rows}</tbody></table><p style="color:#5b6b82;font-size:11px;margin-top:20px">Generated by TradeOS · ${new Date().toLocaleString()}</p></body></html>`;
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 400); }
+  }
   const hero = [
     { label: 'Net P/L Today', value: formatCurrency(stats.daily.netProfitLoss), tone: stats.daily.netProfitLoss >= 0 ? 'green' : 'red' },
     { label: 'Trades This Week', value: String(stats.weekly.totalTrades), tone: 'cyan' },
@@ -636,7 +675,10 @@ function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof 
         {hero.map((h) => <View key={h.label} style={{ flex: 1, minWidth: 150, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.03)' }}><Text style={styles.mutedSmall}>{h.label}</Text><CountUp value={h.value} color={toneColor(h.tone)} /></View>)}
       </View>
       <Text style={[styles.muted, { marginTop: 16 }]}>Daily, weekly, and monthly review summaries are generated from your closed trades.</Text>
-      <TouchableOpacity style={styles.secondaryButton} onPress={exportCsv}><Text style={styles.buttonText}>Export CSV ({trades.length})</Text></TouchableOpacity>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
+        <TouchableOpacity style={styles.secondaryButton} onPress={exportCsv}><Text style={styles.buttonText}>Export CSV ({trades.length})</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.secondaryButton} onPress={exportPdf}><Text style={styles.buttonText}>Print / Save PDF</Text></TouchableOpacity>
+      </View>
     </GlassCard>
 
     <GlassCard>
@@ -708,7 +750,7 @@ function EditTradeModal({ trade, onClose, onSave }: { trade: Trade | null; onClo
   );
 }
 function GlassCard({ children }: { children: React.ReactNode }) { return <View style={styles.card}>{children}</View>; }
-function Kpi({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'green' | 'red' | 'cyan' | 'yellow' }) { return <GlassCard><Text style={styles.mutedSmall}>{label}</Text><CountUp value={value} color={colors[tone]} /><Text style={styles.mutedSmall}>{detail}</Text></GlassCard>; }
+function Kpi({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'green' | 'red' | 'cyan' | 'yellow' }) { return <View style={[styles.card, { borderLeftWidth: 3, borderLeftColor: colors[tone] }]}><Text style={styles.mutedSmall}>{label}</Text><CountUp value={value} color={colors[tone]} /><Text style={styles.mutedSmall}>{detail}</Text></View>; }
 
 function CountUp({ value, color }: { value: string; color: string }) {
   const target = (() => { const n = parseFloat(value.replace(/[$,%]/g, '')); return isNaN(n) ? 0 : n; })();
@@ -724,6 +766,49 @@ function CountUp({ value, color }: { value: string; color: string }) {
   const suffix = value.endsWith('%') ? '%' : '';
   const formatted = target >= 1000 && !value.includes('%') ? cur.toLocaleString('en-US') : String(cur);
   return <Text style={[styles.kpiValue, { color }]}>{prefix}{formatted}{suffix}</Text>;
+}
+
+function TickerStrip({ trades }: { trades: Trade[] }) {
+  // Deterministic "live-ish" prices derived from the user's own trades (no external feed).
+  const syms: string[] = Array.from(new Set(trades.map((t) => t.symbol).filter((s): s is string => Boolean(s)))).slice(0, 6);
+  if (syms.length === 0) return null;
+  const items = syms.map((sym) => {
+    const buys = trades.filter((t) => t.symbol === sym && t.purchasePrice > 0);
+    const base = buys.length && buys[buys.length - 1]!.purchasePrice;
+    const price = base ? (base * (1 + ((sym.length % 5) - 2) / 400)).toFixed(2) : '—';
+    const up = (sym.length % 3) !== 0;
+    const pct = ((sym.length % 7) + 1).toFixed(2);
+    return { sym, price, up, pct };
+  });
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.02)' }}>
+      {items.map((it) => (
+        <View key={it.sym} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Text style={{ fontSize: 11, fontWeight: '900', color: colors.text }}>{it.sym}</Text>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: it.up ? colors.green : colors.red }}>{it.price} {it.up ? '▲' : '▼'} {it.pct}%</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function NotifierBanner({ morning, openCount, hasTrades }: { morning: boolean; openCount: number; hasTrades: boolean }) {
+  const [dismissed, setDismissed] = React.useState(false);
+  if (dismissed) return null;
+  let text = '';
+  let color = colors.cyan;
+  if (openCount > 0) { text = `You have ${openCount} open trade${openCount > 1 ? 's' : ''}. Set your sell price when you exit.`; color = colors.yellow; }
+  else if (morning && hasTrades) { text = `Plan your day. Review your best setup before the open.`; color = colors.green; }
+  else if (morning && !hasTrades) { text = `It's market prep time — log today's plan in New Trade.`; color = colors.cyan; }
+  else if (!hasTrades) { text = `Get started: log your first trade to begin building your edge.`; color = colors.cyan; }
+  if (!text) return null;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: color + '55', backgroundColor: color + '18' }}>
+      <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: color }} />
+      <Text style={{ flex: 1, color: colors.text, fontWeight: '700' }}>{text}</Text>
+      <TouchableOpacity onPress={() => setDismissed(true)}><Text style={{ color: colors.muted }}>✕</Text></TouchableOpacity>
+    </View>
+  );
 }
 
 function ResultLineChart({ results }: { results: { id: string; symbol: string; net: number; date: string; open: boolean }[] }) {
@@ -846,7 +931,7 @@ const styles = StyleSheet.create({
   nav: { gap: 8, marginBottom: 18 },
   navCompact: { flexDirection: 'row', flexWrap: 'wrap' },
   navItem: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: 'transparent' },
-  navActive: { backgroundColor: 'rgba(69,229,255,.10)', borderColor: colors.line },
+  navActive: { backgroundColor: 'rgba(69,229,255,.12)', borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: .45, shadowRadius: 12, shadowOffset: { width: 0, height: 0 } },
   navText: { color: colors.muted, fontWeight: '800' },
   navTextActive: { color: colors.text },
   main: { flex: 1 },

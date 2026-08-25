@@ -551,6 +551,45 @@ export function winRateByDirection(trades: Trade[], field: 'vwapDirection' | 'ma
   return rows.sort((a, b) => b.winRate - a.winRate);
 }
 
+export interface MarketComboStat {
+  /** Human label, e.g. "Up · VWAP up · MACD rising · Call" */
+  label: string;
+  trades: number;
+  winRate: number;
+  lossRate: number;
+  netProfitLoss: number;
+}
+
+/** Win-rate for the key directional combo: Market × VWAP × MACD × Buying type. */
+export function winRateByMarketCombo(trades: Trade[]): MarketComboStat[] {
+  const closed = closedTrades(trades);
+  const byKey = new Map<string, Trade[]>();
+  for (const t of closed) {
+    const key = [t.marketExcitement, t.vwapDirection ?? '—', t.macdTrend ?? '—', t.buyingType].join('|');
+    byKey.set(key, [...(byKey.get(key) ?? []), t]);
+  }
+  const rows: MarketComboStat[] = [...byKey.entries()].map(([key, group]) => {
+    const [mkt, vwap, macd, type] = key.split('|');
+    const pls = group.map((t) => calculateTradeFinancials(t).netProfitLoss ?? 0);
+    const losses = group.filter((t) => calculateTradeFinancials(t).result === 'loss').length;
+    const cap = (s?: string) => { const v = s || '—'; return v.charAt(0).toUpperCase() + v.slice(1); };
+    return {
+      label: `${cap(mkt)} · VWAP ${vwap} · MACD ${macd} · ${cap(type)}`,
+      trades: group.length,
+      winRate: winRate(group),
+      lossRate: losses / group.length,
+      netProfitLoss: pls.reduce((s, v) => s + v, 0),
+    };
+  });
+  return rows.sort((a, b) => b.winRate - a.winRate || b.trades - a.trades);
+}
+
+/** Best combo (min sample) for recommendation on New Trade. */
+export function bestMarketCombo(trades: Trade[], minSample = 3): MarketComboStat | null {
+  const rows = winRateByMarketCombo(trades).filter((r) => r.trades >= minSample);
+  return rows[0] ?? null;
+}
+
 export const VWAP_LABELS = { up: 'Price above VWAP', down: 'Price below VWAP' };
 export const MACD_LABELS = { rising: 'MACD rising', falling: 'MACD falling' };
 

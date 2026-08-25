@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { daysHeld, winRateByDirection, VWAP_LABELS, MACD_LABELS } from '../src/lib/analytics';
+import { daysHeld, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from '../src/lib/analytics';
 import type { Trade } from '../src/lib/types';
 
 function trade(over: Partial<Trade>): Trade {
@@ -47,11 +47,36 @@ describe('winRateByDirection (VWAP / MACD)', () => {
 describe('daysHeld', () => {
   it('returns whole days held (0 if under 1 day)', () => {
     const day = 86400000;
-    expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z', closedAt: '2026-08-20T11:00:00Z' }))).toBe(0); // <1 day
+    expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z', closedAt: '2026-08-20T11:00:00Z' }))).toBe(0);
     expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z', closedAt: '2026-08-22T10:00:00Z' }))).toBe(2);
     expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z', closedAt: '2026-08-21T11:00:00Z' }))).toBe(1);
   });
   it('returns 0 when closedAt is missing', () => {
     expect(daysHeld(trade({ createdAt: '2026-08-20T10:00:00Z' }))).toBe(0); // no closedAt
+  });
+});
+
+describe('winRateByMarketCombo', () => {
+  it('buckets by Market x VWAP x MACD x Type and ranks best first', () => {
+    const trades = [
+      trade({ marketExcitement: 'up', vwapDirection: 'up', macdTrend: 'rising', buyingType: 'call', sellingPrice: 12 }),
+      trade({ marketExcitement: 'up', vwapDirection: 'up', macdTrend: 'rising', buyingType: 'call', sellingPrice: 11.5 }),
+      trade({ marketExcitement: 'up', vwapDirection: 'up', macdTrend: 'rising', buyingType: 'call', sellingPrice: 8 }),
+      trade({ marketExcitement: 'down', vwapDirection: 'down', macdTrend: 'falling', buyingType: 'put', sellingPrice: 8 }),
+    ];
+    const rows = winRateByMarketCombo(trades);
+    expect(rows.length).toBe(2);
+    const top = rows[0]!;
+    expect(top.label).toContain('Up');
+    expect(top.label).toContain('Call');
+    expect(top.winRate).toBeCloseTo(2 / 3);
+    expect(top.trades).toBe(3);
+    // sorted desc by win rate -> up/call (67%) before down/put (0%)
+    expect(rows[1]!.winRate).toBeCloseTo(0);
+  });
+  it('handles missing direction with placeholder and still buckets by what exists', () => {
+    const rows = winRateByMarketCombo([trade({})]); // market=up, type=call, vwap/macd missing
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.label).toContain('—'); // placeholder for missing VWAP/MACD
   });
 });
