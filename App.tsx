@@ -8,7 +8,7 @@ import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
 import { uuid } from './src/lib/uuid';
 import { colors, shadow } from './src/theme';
-import { supabase, checkApprovedStatus, OWNER_EMAIL } from './src/lib/supabase';
+import { supabase, checkApprovedStatus, OWNER_EMAIL, SUPABASE_URL, SUPABASE_ANON_KEY } from './src/lib/supabase';
 import { createSupabaseTradeRepository, saveAnalyticsSnapshot } from './src/lib/supabaseTradeRepository';
 
 type Screen = 'Dashboard' | 'New Trade' | 'Trade Log' | 'Analytics' | 'Reports' | 'Settings';
@@ -332,7 +332,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
             <TouchableOpacity style={styles.primaryButton} onPress={() => setScreen('New Trade')}><Text style={styles.primaryText}>Log New Trade</Text></TouchableOpacity>
           </View>
 
-          {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} trades={trades} />}
+          {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} trades={trades} onNewTrade={() => setScreen('New Trade')} />}
           {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} trades={trades} onSaveAttempt={openSaveConfirm} />}
           {screen === 'Trade Log' && <TradeLog trades={trades} onOpenEdit={openEditTrade} onDelete={deleteTrade} />}
           {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} trades={trades} />}
@@ -399,18 +399,27 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   );
 }
 
-function Dashboard({ stats, compact, trades }: { stats: ReturnType<typeof buildDashboardStats>; compact: boolean; trades: Trade[] }) {
+function Dashboard({ stats, compact, trades, onNewTrade }: { stats: ReturnType<typeof buildDashboardStats>; compact: boolean; trades: Trade[]; onNewTrade: () => void }) {
   const hasTrades = (stats.daily.totalTrades || stats.weekly.totalTrades || stats.monthly.totalTrades) > 0;
   const results = trades.map((t) => { const f = calculateTradeFinancials(t); return { id: t.id, symbol: t.symbol || '—', net: f.netProfitLoss ?? 0, date: t.tradeDate, open: f.result === 'open' }; });
   const openCount = trades.filter((t) => t.status === 'open').length;
   const hour = new Date().getHours();
   const morning = hour >= 8 && hour < 11;
   return <View>
-    <NotifierBanner morning={morning} openCount={openCount} hasTrades={hasTrades} />
+    <NotifierBanner morning={morning} openCount={openCount} hasTrades={hasTrades} onAction={onNewTrade} />
     {!hasTrades && (
       <View style={[styles.card, { marginBottom: 16 }]}>
-        <Text style={styles.cardTitle}>Welcome — no trades yet</Text>
-        <Text style={[styles.muted, { marginTop: 6 }]}>Your dashboard is clean. Log your first trade to start building your journal and analytics. Head to "New Trade" to get started.</Text>
+        <Text style={styles.cardTitle}>Welcome to TradeOS</Text>
+        <Text style={[styles.muted, { marginTop: 6 }]}>Start building your edge in 3 quick steps:</Text>
+        <View style={{ marginTop: 12, gap: 10 }}>
+          {['1 · Log your first trade with its conditions', '2 · Record your sell price when you exit', '3 · Watch the probability engine reveal what wins'].map((s, i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.03)' }}>
+              <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: i === 0 ? colors.cyan : colors.violet, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#041018', fontWeight: '900' }}>{i + 1}</Text></View>
+              <Text style={{ color: colors.text, fontWeight: '700', flex: 1 }}>{s}</Text>
+            </View>
+          ))}
+        </View>
+        <TouchableOpacity style={[styles.primaryButton, { marginTop: 16, alignSelf: 'flex-start' }]} onPress={onNewTrade}><Text style={styles.primaryText}>Log Your First Trade →</Text></TouchableOpacity>
       </View>
     )}
     <View style={[styles.kpiGrid, compact && styles.oneCol]}>
@@ -585,6 +594,11 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
   const expectancy = computeExpectancy(trades);
   const sizing = computePositionSizing(trades, localDatabase.settings.riskLimitPercent);
   const form = recentForm(trades, 20);
+  const [drillKey, setDrillKey] = React.useState<string | null>(null);
+  const drillTrades = drillKey ? trades.filter((t) => {
+    const key = [t.marketExcitement, t.vwapDirection ?? '—', t.macdTrend ?? '—', t.buyingType].join('|');
+    return key === drillKey;
+  }) : [];
   const toneColor = (tone: string) => ({ green: colors.green, cyan: colors.cyan, violet: colors.violet, red: colors.red, yellow: colors.yellow } as Record<string, string>)[tone] || colors.cyan;
   const hero = [
     { label: 'Overall Win Rate', value: formatPercent(overallWinRate), tone: 'green', detail: `${rankings.totalClosed} closed` },
@@ -601,9 +615,28 @@ function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof an
       </View>
     </GlassCard>
     {/* Directional market combo */}
-    <GlassCard><Text style={styles.cardTitle}>Top Winning Combos (Market × VWAP × MACD × Type)</Text>
+    <GlassCard><Text style={styles.cardTitle}>Top Winning Combos (tap to see trades)</Text>
       {winRateByMarketCombo(trades).length === 0 && <Text style={styles.muted}>Log closed trades with market/VWAP/MACD to see your strongest direction combo.</Text>}
-      {winRateByMarketCombo(trades).slice(0, 6).map((c, i) => <View key={c.label} style={styles.metric}><Text style={[styles.muted, { flex: 1 }]}><Text style={{ color: colors.cyan, fontWeight: '900' }}>#{i + 1}</Text> {c.label} · n={c.trades}</Text><Text style={styles.metricValue}><Text style={{ color: colors.green }}>{formatPercent(c.winRate)}</Text> / <Text style={{ color: colors.red }}>{formatPercent(c.lossRate)}</Text></Text></View>)}
+      {winRateByMarketCombo(trades).slice(0, 6).map((c, i) => {
+        const first = c.label.split(' · ')[0] || '';
+        const comboKey = [first.toLowerCase(), c.label.includes('VWAP down') ? 'down' : 'up', c.label.includes('MACD falling') ? 'falling' : 'rising', c.label.includes('Put') ? 'put' : 'call'].join('|');
+        const open = drillKey === comboKey;
+        return (
+          <View key={c.label}>
+            <TouchableOpacity style={styles.metric} onPress={() => setDrillKey(open ? null : comboKey)}>
+              <Text style={[styles.muted, { flex: 1 }]}><Text style={{ color: colors.cyan, fontWeight: '900' }}>#{i + 1}</Text> {c.label} · n={c.trades}</Text>
+              <Text style={styles.metricValue}><Text style={{ color: colors.green }}>{formatPercent(c.winRate)}</Text> / <Text style={{ color: colors.red }}>{formatPercent(c.lossRate)}</Text></Text>
+            </TouchableOpacity>
+            {open && drillTrades.map((d) => { const f = calculateTradeFinancials(d); return (
+              <View key={d.id} style={{ paddingVertical: 6, paddingHorizontal: 12, borderLeftWidth: 2, borderLeftColor: colors.cyan + '66' }}>
+                <Text style={styles.mutedSmall}>{d.symbol || '—'} · {d.tradeDate} · {d.contractCount}@{d.purchasePrice}</Text>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: f.result === 'loss' ? colors.red : f.result === 'gain' ? colors.green : colors.yellow }}>{(f.netProfitLoss ?? 0) > 0 ? '+' : ''}{formatCurrency(f.netProfitLoss ?? 0)}</Text>
+              </View>
+            ); })}
+            {open && drillTrades.length === 0 && <Text style={[styles.mutedSmall, { paddingLeft: 12 }]}>No trades in this combo.</Text>}
+          </View>
+        );
+      })}
     </GlassCard>
     {/* Higher-probability set-ups, most important */}
     <GlassCard><Text style={styles.cardTitle}>Combos: Best → Least (Win / Loss rate)</Text>
@@ -787,30 +820,56 @@ function CountUp({ value, color }: { value: string; color: string }) {
 }
 
 function TickerStrip({ trades }: { trades: Trade[] }) {
-  // Deterministic "live-ish" prices derived from the user's own trades (no external feed).
+  // Real latest prices via Supabase edge-function proxy (server-side Yahoo fetch),
+  // with deterministic offline fallback derived from the user's own trades.
   const syms: string[] = Array.from(new Set(trades.map((t) => t.symbol).filter((s): s is string => Boolean(s)))).slice(0, 6);
+  const [live, setLive] = React.useState<Record<string, { price: number; pct: number }>>({});
+  React.useEffect(() => {
+    if (syms.length === 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const sess = (await supabase.auth.getSession()).data.session;
+        const token = sess?.access_token;
+        const out: Record<string, { price: number; pct: number }> = {};
+        await Promise.all(syms.map(async (sym) => {
+          try {
+            const url = `${SUPABASE_URL}/functions/v1/market-quote?symbol=${encodeURIComponent(sym)}`;
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY } });
+            if (res.ok) { const j = await res.json(); if (j.price) out[sym] = { price: j.price, pct: j.pct ?? 0 }; }
+          } catch { /* fallback below */ }
+        }));
+        if (alive) setLive(out);
+      } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syms.join(',')]);
   if (syms.length === 0) return null;
   const items = syms.map((sym) => {
+    const real = live[sym];
+    if (real) return { sym, price: real.price.toFixed(2), up: real.pct >= 0, pct: Math.abs(real.pct).toFixed(2), live: true };
+    // offline fallback derived from own trades
     const buys = trades.filter((t) => t.symbol === sym && t.purchasePrice > 0);
     const base = buys.length && buys[buys.length - 1]!.purchasePrice;
     const price = base ? (base * (1 + ((sym.length % 5) - 2) / 400)).toFixed(2) : '—';
     const up = (sym.length % 3) !== 0;
     const pct = ((sym.length % 7) + 1).toFixed(2);
-    return { sym, price, up, pct };
+    return { sym, price, up, pct, live: false };
   });
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.02)' }}>
       {items.map((it) => (
         <View key={it.sym} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Text style={{ fontSize: 11, fontWeight: '900', color: colors.text }}>{it.sym}</Text>
-          <Text style={{ fontSize: 10, fontWeight: '700', color: it.up ? colors.green : colors.red }}>{it.price} {it.up ? '▲' : '▼'} {it.pct}%</Text>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: it.up ? colors.green : colors.red }}>{it.price} {it.up ? '▲' : '▼'} {it.pct}%{it.live ? '' : '°'}</Text>
         </View>
       ))}
     </View>
   );
 }
 
-function NotifierBanner({ morning, openCount, hasTrades }: { morning: boolean; openCount: number; hasTrades: boolean }) {
+function NotifierBanner({ morning, openCount, hasTrades, onAction }: { morning: boolean; openCount: number; hasTrades: boolean; onAction?: () => void }) {
   const [dismissed, setDismissed] = React.useState(false);
   if (dismissed) return null;
   let text = '';
@@ -821,11 +880,11 @@ function NotifierBanner({ morning, openCount, hasTrades }: { morning: boolean; o
   else if (!hasTrades) { text = `Get started: log your first trade to begin building your edge.`; color = colors.cyan; }
   if (!text) return null;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: color + '55', backgroundColor: color + '18' }}>
+    <TouchableOpacity activeOpacity={0.85} onPress={onAction} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: color + '55', backgroundColor: color + '18' }}>
       <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: color }} />
       <Text style={{ flex: 1, color: colors.text, fontWeight: '700' }}>{text}</Text>
-      <TouchableOpacity onPress={() => setDismissed(true)}><Text style={{ color: colors.muted }}>✕</Text></TouchableOpacity>
-    </View>
+      <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); setDismissed(true); }}><Text style={{ color: colors.muted }}>✕</Text></TouchableOpacity>
+    </TouchableOpacity>
   );
 }
 
