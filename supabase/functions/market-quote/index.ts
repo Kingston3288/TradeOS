@@ -15,7 +15,7 @@ const cors = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
 
-// Small in-memory cache: symbol -> {price, pct, change, candles, time} for ~75s.
+// Small in-memory cache: key = `${interval}:${symbol}` -> {price, pct, change, candles, time} for ~75s.
 const cache = new Map<string, { price: number; pct: number; change: number; candles: Array<{ time: number; open: number; high: number; low: number; close: number }>; time: number }>()
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
@@ -25,6 +25,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
 
   const symbol = (url.searchParams.get('symbol') || '').toUpperCase().trim()
+  const interval = (url.searchParams.get('interval') || '1d').trim()
+  const is5m = interval === '5m'
+  // Yahoo max range: 5m => 5d (1 trading day-ish of candles), 1d => 6mo
+  const range = is5m ? '5d' : '6mo'
   if (!symbol) return new Response(JSON.stringify({ error: 'symbol required' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } })
 
   // Authorize: any signed-in user (covers approved beta users) or owner.
@@ -37,14 +41,15 @@ Deno.serve(async (req) => {
   } catch { authed = false }
   if (!authed) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } })
 
-  const cached = cache.get(symbol)
+  const cacheKey = `${interval}:${symbol}`
+  const cached = cache.get(cacheKey)
   if (cached && Date.now() - cached.time < 75000) {
-    return new Response(JSON.stringify({ symbol, price: cached.price, pct: cached.pct, change: cached.change, candles: cached.candles, cached: true }), { headers: { ...cors, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ symbol, price: cached.price, pct: cached.pct, change: cached.change, candles: cached.candles, interval, cached: true }), { headers: { ...cors, 'Content-Type': 'application/json' } })
   }
 
   // Fetch real price + history from Yahoo.
   try {
-    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=6mo`, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } })
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${encodeURIComponent(interval)}&range=${range}`, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } })
     if (!r.ok) throw new Error('yahoo ' + r.status)
     const j = await r.json() as any
     const result = j?.chart?.result?.[0]
@@ -76,8 +81,8 @@ Deno.serve(async (req) => {
       pct = previous.close ? (change / previous.close) * 100 : 0
     }
 
-    cache.set(symbol, { price, pct, change, candles, time: Date.now() })
-    return new Response(JSON.stringify({ symbol, price, pct, change, candles: candles.slice(-130), cached: false }), { headers: { ...cors, 'Content-Type': 'application/json' } })
+    cache.set(cacheKey, { price, pct, change, candles, time: Date.now() })
+    return new Response(JSON.stringify({ symbol, price, pct, change, candles: is5m ? candles.slice(-390) : candles.slice(-130), interval, cached: false }), { headers: { ...cors, 'Content-Type': 'application/json' } })
   } catch (e) {
     // If we have a stale cache entry, return it rather than erroring.
     if (cached) return new Response(JSON.stringify({ symbol, price: cached.price, pct: cached.pct, cached: true, stale: true }), { headers: { ...cors, 'Content-Type': 'application/json' } })

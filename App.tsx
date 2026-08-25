@@ -883,24 +883,42 @@ function TickerStrip({ trades }: { trades: Trade[] }) {
 }
 
 function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote: { candles: Array<{ time: number; open: number; high: number; low: number; close: number }> }; onClose: () => void }) {
+  const [candles, setCandles] = React.useState(quote.candles || []);
+  const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState('');
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const sess = (await supabase.auth.getSession()).data.session;
+        const token = sess?.access_token;
+        const url = `${SUPABASE_URL}/functions/v1/market-quote?symbol=${encodeURIComponent(symbol)}&interval=5m`;
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY } });
+        if (res.ok) { const j = await res.json(); if (alive && j.candles?.length) setCandles(j.candles); }
+      } catch (e) { /* fallback to passed candles */ }
+      if (alive) setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [symbol]);
   let svg = '';
-  if (typeof window !== 'undefined') {
-    try {
-      svg = technicalChartSvg(quote.candles, symbol);
-    } catch (e) { console.error('chart svg error', e); }
+  if (typeof window !== 'undefined' && candles.length) {
+    try { svg = technicalChartSvg(candles, symbol); } catch (e) { console.error('chart svg error', e); }
   }
   return (
     <Modal transparent visible animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
         <View style={[styles.modalCard, { maxWidth: 820 }]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.modalTitle}>{symbol} — Technical Chart</Text>
+            <Text style={styles.modalTitle}>{symbol} — 5-Min Chart</Text>
             <TouchableOpacity onPress={onClose}><Text style={{ color: colors.muted }}>✕</Text></TouchableOpacity>
           </View>
-          <Text style={[styles.mutedSmall, { marginBottom: 8 }]}>Candles · 9 EMA (cyan) · 20 EMA (violet) · VWAP (amber) · MACD</Text>
-          {!quote.candles?.length ? (
-            <View style={{ height: 460, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1330' }}>
+          <Text style={[styles.mutedSmall, { marginBottom: 8 }]}>Candles · 9 SMA (cyan) · 20 SMA (orange) · VWAP (white) · MACD</Text>
+          {loading ? (
+            <View style={{ height: 466, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1330' }}>
+              <Text style={styles.muted}>Loading 5-min chart…</Text>
+            </View>
+          ) : !candles.length ? (
+            <View style={{ height: 466, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1330' }}>
               <Text style={styles.muted}>No chart data available (market may be closed).</Text>
             </View>
           ) : (
@@ -913,27 +931,34 @@ function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote
   );
 }
 
-/** Render candles + 9/20 EMA + VWAP + MACD as a self-contained SVG (works on any static host, no external chart lib). */
+/** Render 5-min candles + 9/20 SMA + VWAP + MACD as a self-contained SVG (works on any static host, no external chart lib). */
 function technicalChartSvg(candles: Array<{ time: number; open: number; high: number; low: number; close: number }>, _symbol: string): string {
   const W = 680, MAIN_H = 340, MACD_H = 110, PADL = 60, PADR = 16, TOP = 24, GAP = 16;
   const n = candles.length;
   if (n === 0) return '';
   const chartW = W - PADL - PADR;
-  // EMA helpers
-  const ema = (period: number) => {
-    const k = 2 / (period + 1); let prev = 0; const out: number[] = [];
-    for (let i = 0; i < n; i++) { prev = i === 0 ? candles[i]!.close : candles[i]!.close * k + prev * (1 - k); if (i >= period - 1) out.push(prev); }
+  const closes = candles.map((c) => c.close);
+  // SMA helper (simple moving average)
+  const sma = (period: number) => {
+    const out: number[] = [];
+    let sum = 0;
+    for (let i = 0; i < n; i++) { sum += closes[i]!; if (i >= period) sum -= closes[i - period]!; if (i >= period - 1) out.push(sum / period); }
     return out;
   };
-  const ema9 = ema(9), ema20 = ema(20);
+  const sma9 = sma(9), sma20 = sma(20);
   // VWAP
-  const vwap: number[] = []; { let cumPV = 0, cumV = 0; for (let i = 0; i < n; i++) { const c = candles[i]!; const tp = (c.high + c.low + c.close) / 3; const v = 1; cumPV += tp * v; cumV += v; vwap.push(cumPV / cumV); } }
-  // MACD (12/26) centered
+  const vwap: number[] = []; { let cumPV = 0; for (let i = 0; i < n; i++) { const c = candles[i]!; const tp = (c.high + c.low + c.close) / 3; cumPV += tp; vwap.push(cumPV / (i + 1)); } }
+  // MACD (12/26) — EMA based
+  const ema = (period: number) => {
+    const k = 2 / (period + 1); let prev = 0; const out: number[] = [];
+    for (let i = 0; i < n; i++) { prev = i === 0 ? closes[i]! : closes[i]! * k + prev * (1 - k); out.push(prev); }
+    return out;
+  };
   const macd: number[] = []; { const f12 = ema(12), f26 = ema(26); for (let i = 0; i < n; i++) { const f = f12[i] ?? 0, s = f26[i] ?? 0; macd.push(f - s); } }
 
   let min = Infinity, max = -Infinity;
   for (const c of candles) { min = Math.min(min, c.low); max = Math.max(max, c.high); }
-  for (const v of [...ema9, ...ema20, ...vwap]) { min = Math.min(min, v); max = Math.max(max, v); }
+  for (const v of [...sma9, ...sma20, ...vwap]) { min = Math.min(min, v); max = Math.max(max, v); }
   const pad = (max - min) * 0.08 || 1; min -= pad; max += pad;
   const yP = (v: number) => (MAIN_H - TOP) * (1 - (v - min) / (max - min)) + TOP;
   const xP = (i: number) => PADL + (n === 1 ? chartW / 2 : (i / (n - 1)) * chartW);
@@ -969,11 +994,11 @@ function technicalChartSvg(candles: Array<{ time: number; open: number; high: nu
     const mv = macd[i] ?? 0;
     s += `<rect x="${x - bodyW / 2}" y="${Math.min(macdY(mv), macdY(0))}" width="${bodyW}" height="${Math.max(1, Math.abs(macdY(mv) - macdY(0)))}" fill="${mv >= 0 ? 'rgba(69,229,255,.7)' : 'rgba(255,77,109,.7)'}"/>`;
   }
-  // EMA9, EMA20, VWAP polylines
+  // SMA9 (cyan), SMA20 (orange), VWAP (white) polylines
   const poly = (vals: number[]) => vals.map((v, i) => `${xP(i + (n - vals.length))},${yP(v)}`).join(' ');
-  if (ema9.length) s += `<polyline points="${poly(ema9)}" fill="none" stroke="#45e5ff" stroke-width="2"/>`;
-  if (ema20.length) s += `<polyline points="${poly(ema20)}" fill="none" stroke="#7b61ff" stroke-width="2"/>`;
-  s += `<polyline points="${vwap.map((v, i) => `${xP(i)},${yP(v)}`).join(' ')}" fill="none" stroke="#ffcc66" stroke-width="2" stroke-dasharray="4 3"/>`;
+  if (sma9.length) s += `<polyline points="${poly(sma9)}" fill="none" stroke="#45e5ff" stroke-width="2"/>`;
+  if (sma20.length) s += `<polyline points="${poly(sma20)}" fill="none" stroke="#ff8c42" stroke-width="2"/>`;
+  s += `<polyline points="${vwap.map((v, i) => `${xP(i)},${yP(v)}`).join(' ')}" fill="none" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3"/>`;
   s += `<text x="${PADL}" y="${TOP - 8}" fill="#8fa6c3" font-size="10">Last ${candles[n-1]!.close.toFixed(2)}</text>`;
   s += `</svg>`;
   return s;
