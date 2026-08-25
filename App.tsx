@@ -607,6 +607,8 @@ function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof 
   const sizing = computePositionSizing(trades, localDatabase.settings.riskLimitPercent);
   const { setups, overallWinRate } = findHighProbabilitySetups(trades, 3);
   const form = recentForm(trades, 20);
+  const { width } = useWindowDimensions();
+  const compact = width < 780;
   function exportCsv() {
     const csv = buildTradesCsv(trades);
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -615,7 +617,50 @@ function Reports({ trades, stats }: { trades: Trade[]; stats: ReturnType<typeof 
     a.href = url; a.download = `tradeos-trades-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
-  return <View style={styles.twoCol}><GlassCard><Text style={styles.cardTitle}>Reports</Text><Text style={styles.muted}>Daily, weekly, and monthly review summaries are generated from closed trades.</Text><Metric label="Net P/L Today" value={formatCurrency(stats.daily.netProfitLoss)} /><Metric label="Total Trades This Week" value={String(stats.weekly.totalTrades)} /><Metric label="# Days Hold (avg)" value={String(averageDaysHeld(trades))} /><Metric label="Biggest Win" value={formatCurrency(stats.weekly.biggestWin)} /><Metric label="Biggest Loss" value={formatCurrency(stats.weekly.biggestLoss)} /><TouchableOpacity style={styles.secondaryButton} onPress={exportCsv}><Text style={styles.buttonText}>Export CSV ({trades.length})</Text></TouchableOpacity></GlassCard><GlassCard><Text style={styles.cardTitle}>Probability Snapshot</Text><Metric label="Overall win rate" value={formatPercent(overallWinRate)} /><Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} /><Metric label="Position size" value={sizing.recommendedRiskPercent > 0 ? `${sizing.recommendedRiskPercent.toFixed(1)}%` : '—'} /><Metric label="Recent form" value={`${formatPercent(form.recentWinRate)}`} /></GlassCard></View>;
+  const hero = [
+    { label: 'Net P/L Today', value: formatCurrency(stats.daily.netProfitLoss), tone: stats.daily.netProfitLoss >= 0 ? 'green' : 'red' },
+    { label: 'Trades This Week', value: String(stats.weekly.totalTrades), tone: 'cyan' },
+    { label: 'Biggest Win', value: formatCurrency(stats.weekly.biggestWin), tone: 'green' },
+    { label: 'Biggest Loss', value: formatCurrency(stats.weekly.biggestLoss), tone: 'red' },
+  ];
+  const toneColor = (tone: string) => ({ green: colors.green, cyan: colors.cyan, violet: colors.violet, red: colors.red, yellow: colors.yellow } as Record<string, string>)[tone] || colors.cyan;
+  const periods = [
+    { label: 'Daily', p: stats.daily, color: '#35ff9b' },
+    { label: 'Weekly', p: stats.weekly, color: '#45e5ff' },
+    { label: 'Monthly', p: stats.monthly, color: '#7b61ff' },
+  ];
+  return <View style={styles.twoCol}>
+    <GlassCard>
+      <Text style={styles.eyebrow}>Reports</Text>
+      <View style={[styles.kpiGrid, compact && styles.oneCol]}>
+        {hero.map((h) => <View key={h.label} style={{ flex: 1, minWidth: 150, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.03)' }}><Text style={styles.mutedSmall}>{h.label}</Text><CountUp value={h.value} color={toneColor(h.tone)} /></View>)}
+      </View>
+      <Text style={[styles.muted, { marginTop: 16 }]}>Daily, weekly, and monthly review summaries are generated from your closed trades.</Text>
+      <TouchableOpacity style={styles.secondaryButton} onPress={exportCsv}><Text style={styles.buttonText}>Export CSV ({trades.length})</Text></TouchableOpacity>
+    </GlassCard>
+
+    <GlassCard>
+      <Text style={styles.cardTitle}>Period Breakdown</Text>
+      {periods.map((x) => (
+        <View key={x.label} style={styles.metric}>
+          <Text style={[styles.muted, { flex: 1 }]}>{x.label} · {x.p.totalTrades} trades</Text>
+          <Text style={{ color: x.p.netProfitLoss >= 0 ? colors.green : colors.red, fontWeight: '900' }}>{formatCurrency(x.p.netProfitLoss)} · {formatPercent(x.p.winRate)} WR</Text>
+        </View>
+      ))}
+      {periods.length > 0 && <AnimatedBarChart data={periods.map((x) => ({ label: x.label, value: x.p.netProfitLoss, pct: Math.max(0, Math.round((x.p.netProfitLoss / Math.max(1, Math.max(...periods.map((z) => Math.abs(z.p.netProfitLoss))), 1)) * 100)), color: x.p.netProfitLoss >= 0 ? '#35ff9b' : '#ff4d6d', sub: `${x.p.totalTrades} trades` }))} unit="" />}
+    </GlassCard>
+
+    <GlassCard>
+      <Text style={styles.cardTitle}>Probability Snapshot</Text>
+      <Metric label="Overall win rate" value={formatPercent(overallWinRate)} />
+      <Metric label="Expectancy / trade" value={formatCurrency(expectancy.expectancy)} />
+      <Metric label="Profit Factor" value={expectancy.profitFactor === Infinity ? '∞' : expectancy.profitFactor.toFixed(2)} />
+      <Metric label="Payoff ratio" value={expectancy.payoffRatio.toFixed(2)} />
+      <Metric label="Position size (Kelly)" value={sizing.recommendedRiskPercent > 0 ? `${sizing.recommendedRiskPercent.toFixed(1)}%` : '—'} />
+      <Metric label="Recent form" value={`${formatPercent(form.recentWinRate)} (last ${form.recentCount})`} />
+      <Metric label="# Days Hold (avg)" value={String(averageDaysHeld(trades))} />
+    </GlassCard>
+  </View>;
 }
 
 function Settings() { return <GlassCard><Text style={styles.cardTitle}>Settings / Rule Engine</Text><Metric label="Timezone" value={localDatabase.settings.timezone} /><Metric label="Market Open" value={localDatabase.settings.marketOpenTime} /><Metric label="Risk Limit" value={`${localDatabase.settings.riskLimitPercent}%`} /><Metric label="Portfolio" value={formatCurrency(localDatabase.settings.portfolioValue)} /></GlassCard>; }
