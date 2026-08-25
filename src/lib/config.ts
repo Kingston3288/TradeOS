@@ -28,9 +28,10 @@ export function isDatabaseConfigured(config = createAuthConfig()): boolean {
 }
 
 function readRuntimeEnvironment(): Environment {
-  const processEnv = typeof process !== 'undefined' ? process.env : {};
+  const raw: Record<string, string | undefined> =
+    typeof process !== 'undefined' && process.env ? (process.env as Record<string, string | undefined>) : {};
   return {
-    EXPO_PUBLIC_SUPABASE_URL: processEnv.EXPO_PUBLIC_SUPABASE_URL,
-    EXPO_PUBLIC_SUPABASE_ANON_KEY: processEnv.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    EXPO_PUBLIC_SUPABASE_URL: raw.EXPO_PUBLIC_SUPABASE_URL,
+    EXPO_PUBLIC_SUPABASE_ANON_KEY: raw.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   };
 }

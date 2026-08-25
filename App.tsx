@@ -330,7 +330,7 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
             <TouchableOpacity style={styles.primaryButton} onPress={() => setScreen('New Trade')}><Text style={styles.primaryText}>Log New Trade</Text></TouchableOpacity>
           </View>
 
-          {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} />}
+          {screen === 'Dashboard' && <Dashboard stats={stats} compact={compact} trades={trades} />}
           {screen === 'New Trade' && <NewTrade draft={draft} setDraft={setDraft} trades={trades} onSaveAttempt={openSaveConfirm} />}
           {screen === 'Trade Log' && <TradeLog trades={trades} onOpenEdit={openEditTrade} onDelete={deleteTrade} />}
           {screen === 'Analytics' && <Analytics analyses={analyses} stats={stats} trades={trades} />}
@@ -382,8 +382,9 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   );
 }
 
-function Dashboard({ stats, compact }: { stats: ReturnType<typeof buildDashboardStats>; compact: boolean }) {
+function Dashboard({ stats, compact, trades }: { stats: ReturnType<typeof buildDashboardStats>; compact: boolean; trades: Trade[] }) {
   const hasTrades = (stats.daily.totalTrades || stats.weekly.totalTrades || stats.monthly.totalTrades) > 0;
+  const results = trades.map((t) => { const f = calculateTradeFinancials(t); return { id: t.id, symbol: t.symbol || '—', net: f.netProfitLoss ?? 0, date: t.tradeDate, open: f.result === 'open' }; });
   return <View>
     {!hasTrades && (
       <View style={[styles.card, { marginBottom: 16 }]}>
@@ -392,14 +393,27 @@ function Dashboard({ stats, compact }: { stats: ReturnType<typeof buildDashboard
       </View>
     )}
     <View style={[styles.kpiGrid, compact && styles.oneCol]}>
-      <Kpi label="Daily P/L" value={formatCurrency(stats.daily.netProfitLoss)} tone={stats.daily.netProfitLoss >= 0 ? 'green' : 'red'} detail={`${stats.daily.wins} wins / ${stats.daily.losses} losses`} />
-      <Kpi label="Weekly P/L" value={formatCurrency(stats.weekly.netProfitLoss)} tone="cyan" detail={`${formatPercent(stats.weekly.winRate)} win rate`} />
-      <Kpi label="Monthly P/L" value={formatCurrency(stats.monthly.netProfitLoss)} tone="yellow" detail={`${stats.monthly.totalTrades} closed trades`} />
+      <Kpi label="Daily P/L" value={formatCurrency(stats.daily.netProfitLoss)} tone={stats.daily.netProfitLoss >= 0 ? 'green' : 'red'} detail={`${stats.daily.wins}W / ${stats.daily.losses}L`} />
+      <Kpi label="Win Rate" value={formatPercent(stats.winRate)} tone="cyan" detail={`${stats.totalWins}W / ${stats.totalLosses}L closed`} />
+      <Kpi label="Average Win" value={formatCurrency(stats.averageWinningTrade)} tone="green" detail="Avg winning trade" />
+      <Kpi label="Average Loss" value={formatCurrency(stats.averageLosingTrade)} tone="yellow" detail="Avg losing trade" />
       <Kpi label="Rule Discipline" value={formatPercent(stats.ruleDisciplineScore)} tone="green" detail="Checklist adherence" />
     </View>
-    <View style={[styles.twoCol, compact && styles.oneCol]}>
-      <GlassCard><Text style={styles.cardTitle}>Daily / Weekly / Monthly Comparison</Text><BarRow label="Daily" value={stats.daily.netProfitLoss} max={1200} /><BarRow label="Weekly" value={stats.weekly.netProfitLoss} max={2500} /><BarRow label="Monthly" value={stats.monthly.netProfitLoss} max={5000} /></GlassCard>
-      <GlassCard><Text style={styles.cardTitle}>Command Summary</Text><Metric label="Win Rate" value={formatPercent(stats.winRate)} /><Metric label="Average Win" value={formatCurrency(stats.averageWinningTrade)} /><Metric label="Average Loss" value={formatCurrency(stats.averageLosingTrade)} /><Text style={styles.muted}>{stats.summary}</Text></GlassCard>
+    <View style={[styles.twoCol, compact && styles.oneCol, { marginTop: 4 }]}>
+      <View style={{ flex: 1.4, minWidth: 300 }}>
+        {results.length >= 2 ? <ResultLineChart results={results} /> : <GlassCard><Text style={styles.cardTitle}>Results Trend</Text><Text style={styles.muted}>Log 2+ trades to see your cumulative P/L trend here.</Text></GlassCard>}
+      </View>
+      <View style={{ flex: 1, gap: 16, minWidth: 260 }}>
+        <GlassCard>
+          <Text style={styles.cardTitle}>Best Setup</Text>
+          {stats.bestSetupPattern ? <><Text style={{ fontSize: 22, fontWeight: '900', color: colors.green, marginVertical: 6 }}>{formatPercent(stats.bestSetupPattern.winRate)}</Text><Text style={styles.mutedSmall}>{stats.bestSetupPattern.label} · n={stats.bestSetupPattern.sampleSize}</Text></> : <Text style={styles.muted}>Log more closed trades to surface your best setup.</Text>}
+        </GlassCard>
+        <GlassCard>
+          <Text style={styles.cardTitle}>Rule Discipline</Text>
+          <View style={styles.barTrack}><View style={[styles.barFill, { width: `${Math.round(stats.ruleDisciplineScore * 100)}%`, backgroundColor: colors.green }]} /></View>
+          <Text style={[styles.muted, { marginTop: 10 }]}>{stats.summary}</Text>
+        </GlassCard>
+      </View>
     </View>
   </View>;
 }
@@ -741,7 +755,6 @@ function AnimatedBarChart({ data, unit }: { data: BarDatum[]; unit?: string }) {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <View style={styles.metric}><Text style={styles.muted}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
-function BarRow({ label, value, max }: { label: string; value: number; max: number }) { const width = `${Math.min(100, Math.abs(value) / max * 100)}%` as const; return <View style={styles.barWrap}><Text style={styles.mutedSmall}>{label}</Text><View style={styles.barTrack}><View style={[styles.barFill, { width, backgroundColor: value >= 0 ? colors.green : colors.red }]} /></View><Text style={styles.metricValue}>{formatCurrency(value)}</Text></View>; }
 function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) { const { label, ...rest } = props; return <View style={styles.field}><Text style={styles.mutedSmall}>{label}</Text><TextInput {...rest} placeholderTextColor={colors.muted} style={styles.input} /></View>; }
 function MoneyField({ label, initial, placeholder, allowNull, onChange }: { label: string; initial: number | null; placeholder?: string; allowNull?: boolean; onChange: (n: number | null) => void }) {
   const [text, setText] = React.useState(initial === null || initial === 0 ? '' : String(initial));
