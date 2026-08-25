@@ -452,7 +452,7 @@ function NewTrade({ draft, setDraft, trades, onSaveAttempt }: { draft: Trade; se
       <Segment label="MACD trend" value={draft.macdTrend ?? 'rising'} options={['rising', 'falling']} onChange={(v) => update({ macdTrend: (v === 'falling' ? 'falling' : 'rising') as 'rising' })} />
       <Field label="Trade time (12h, e.g. 3:45 PM)" value={draft.tradeTime ?? ''} placeholder="e.g. 3:45 PM" onChangeText={(v) => update({ tradeTime: v })} />
       <Segment label="Buying" value={draft.buyingType} options={['call', 'put']} onChange={(v) => update({ buyingType: v as Trade['buyingType'] })} />
-      <Field label="Contracts" value={String(draft.contractCount)} keyboardType="numeric" onChangeText={(v) => update({ contractCount: Math.max(1, Math.round(parseFloat(v) || 1)) })} />
+      <Field label="Contracts" value={draft.contractCount === 1 ? '' : String(draft.contractCount)} placeholder="e.g. 1" keyboardType="numeric" onChangeText={(v) => update({ contractCount: Math.max(1, Math.round(parseFloat(v) || 1)) })} />
       <MoneyField label="Purchase Price ($)" initial={draft.purchasePrice} placeholder="e.g. 2.50" onChange={(n) => update({ purchasePrice: n ?? 0 })} />
       <MoneyField label="Selling Price ($)" initial={draft.sellingPrice} placeholder="e.g. 3.25" allowNull onChange={(n) => update({ sellingPrice: n })} />
     </View>
