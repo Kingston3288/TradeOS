@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, PanResponder, Animated, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, probGrade, riskReward, rankCombosByWinRate, recentForm, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
+import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, probGrade, riskReward, rankCombosByWinRate, recentForm, todayInTz, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
 import { Trade } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
@@ -213,7 +213,8 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
   const repo = useMemo(() => createSupabaseTradeRepository(), []);
   const { width } = useWindowDimensions();
   const compact = width < 780;
-  const stats = useMemo(() => buildDashboardStats(trades, new Date().toISOString().slice(0, 10), localDatabase.settings.timezone || 'America/New_York'), [trades]);
+  const tz = localDatabase.settings.timezone || 'America/New_York';
+  const stats = useMemo(() => buildDashboardStats(trades, todayInTz(tz), tz), [trades, tz]);
   const analyses = useMemo(() => analyzeAllConditions(trades), [trades]);
 
   // Load trades from Supabase once the user's session is approved (ownerEmail is set).
@@ -883,46 +884,12 @@ function TickerStrip({ trades }: { trades: Trade[] }) {
 
 function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote: { candles: Array<{ time: number; open: number; high: number; low: number; close: number }> }; onClose: () => void }) {
   const [err, setErr] = React.useState('');
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let alive = true;
-    import('lightweight-charts').then((mod: any) => {
-      try {
-        const root = document.getElementById(`techchart-${symbol}`) as HTMLDivElement | null;
-        if (!root || !alive) return;
-        root.innerHTML = '';
-        const c = mod.createChart(root, { autoSize: true, width: root.clientWidth || 640, height: 460, layout: { background: { color: '#0b1330' }, textColor: '#8fa6c3' }, grid: { vertLines: { color: 'rgba(255,255,255,.06)' }, horzLines: { color: 'rgba(255,255,255,.06)' } }, rightPriceScale: { borderColor: 'rgba(255,255,255,.12)' }, timeScale: { borderColor: 'rgba(255,255,255,.12)' } });
-        const candle = c.addSeries(mod.CandlestickSeries, { upColor: '#35ff9b', downColor: '#ff4d6d', wickUpColor: '#35ff9b', wickDownColor: '#ff4d6d', borderVisible: false });
-        candle.setData(quote.candles.map((x) => ({ time: x.time as any, open: x.open, high: x.high, low: x.low, close: x.close })));
-        const ema = (period: number) => {
-          const k = 2 / (period + 1); let prev = 0; const out: Array<{ time: number; value: number }> = [];
-          for (let i = 0; i < quote.candles.length; i++) {
-            const cc = quote.candles[i]!;
-            prev = i === 0 ? cc.close : cc.close * k + prev * (1 - k);
-            if (i >= period - 1) out.push({ time: cc.time, value: prev });
-          }
-          return out;
-        };
-        c.addSeries(mod.LineSeries, { color: '#45e5ff', lineWidth: 2 }).setData(ema(9).map((d) => ({ time: d.time as any, value: d.value })));
-        c.addSeries(mod.LineSeries, { color: '#7b61ff', lineWidth: 2 }).setData(ema(20).map((d) => ({ time: d.time as any, value: d.value })));
-        const vwap = c.addSeries(mod.LineSeries, { color: '#ffcc66', lineWidth: 2 });
-        let cumPV = 0;
-        vwap.setData(quote.candles.map((cc) => { const tp = (cc.high + cc.low + cc.close) / 3; cumPV += tp; return { time: cc.time as any, value: cumPV / (quote.candles.indexOf(cc) + 1) }; }));
-        const pane = c.addPane();
-        const macd = pane.addSeries(mod.HistogramSeries, { priceFormat: { type: 'price' }, color: '#45e5ff', base: 0 });
-        const fast = ema(12); const slow = ema(26);
-        const macdData: Array<{ time: number; value: number }> = [];
-        for (let i = 25; i < quote.candles.length; i++) {
-          const f = fast[i]?.value ?? 0, s = slow[i]?.value ?? 0;
-          macdData.push({ time: quote.candles[i]!.time, value: f - s });
-        }
-        macd.setData(macdData.map((d) => ({ time: d.time as any, value: d.value })));
-        c.fitContent();
-        c.timeScale().fitContent();
-      } catch (e) { if (alive) setErr(String(e)); }
-    });
-    return () => { alive = false; };
-  }, [symbol, quote.candles.length]);
+  let svg = '';
+  if (typeof window !== 'undefined') {
+    try {
+      svg = technicalChartSvg(quote.candles, symbol);
+    } catch (e) { console.error('chart svg error', e); }
+  }
   return (
     <Modal transparent visible animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
@@ -937,13 +904,79 @@ function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote
               <Text style={styles.muted}>No chart data available (market may be closed).</Text>
             </View>
           ) : (
-            <div id={`techchart-${symbol}`} style={{ width: '100%', height: 460, borderRadius: 12, overflow: 'hidden', backgroundColor: '#0b1330' }} />
+            React.createElement('div', { style: { width: '100%', borderRadius: 12, overflow: 'hidden', backgroundColor: '#0b1330' }, dangerouslySetInnerHTML: { __html: svg } })
           )}
           {err ? <Text style={styles.error}>{err}</Text> : null}
         </View>
       </View>
     </Modal>
   );
+}
+
+/** Render candles + 9/20 EMA + VWAP + MACD as a self-contained SVG (works on any static host, no external chart lib). */
+function technicalChartSvg(candles: Array<{ time: number; open: number; high: number; low: number; close: number }>, _symbol: string): string {
+  const W = 680, MAIN_H = 340, MACD_H = 110, PADL = 60, PADR = 16, TOP = 24, GAP = 16;
+  const n = candles.length;
+  if (n === 0) return '';
+  const chartW = W - PADL - PADR;
+  // EMA helpers
+  const ema = (period: number) => {
+    const k = 2 / (period + 1); let prev = 0; const out: number[] = [];
+    for (let i = 0; i < n; i++) { prev = i === 0 ? candles[i]!.close : candles[i]!.close * k + prev * (1 - k); if (i >= period - 1) out.push(prev); }
+    return out;
+  };
+  const ema9 = ema(9), ema20 = ema(20);
+  // VWAP
+  const vwap: number[] = []; { let cumPV = 0, cumV = 0; for (let i = 0; i < n; i++) { const c = candles[i]!; const tp = (c.high + c.low + c.close) / 3; const v = 1; cumPV += tp * v; cumV += v; vwap.push(cumPV / cumV); } }
+  // MACD (12/26) centered
+  const macd: number[] = []; { const f12 = ema(12), f26 = ema(26); for (let i = 0; i < n; i++) { const f = f12[i] ?? 0, s = f26[i] ?? 0; macd.push(f - s); } }
+
+  let min = Infinity, max = -Infinity;
+  for (const c of candles) { min = Math.min(min, c.low); max = Math.max(max, c.high); }
+  for (const v of [...ema9, ...ema20, ...vwap]) { min = Math.min(min, v); max = Math.max(max, v); }
+  const pad = (max - min) * 0.08 || 1; min -= pad; max += pad;
+  const yP = (v: number) => (MAIN_H - TOP) * (1 - (v - min) / (max - min)) + TOP;
+  const xP = (i: number) => PADL + (n === 1 ? chartW / 2 : (i / (n - 1)) * chartW);
+  const bodyW = Math.max(1.5, Math.min(8, (chartW / n) * 0.6));
+
+  // MACD scale
+  let macdMax = 1; for (const v of macd) macdMax = Math.max(macdMax, Math.abs(v));
+  const macdY = (v: number) => (MAIN_H + GAP) + MACD_H / 2 - (v / macdMax) * (MACD_H / 2 - 6);
+
+  let s = `<svg width="${W}" height="${MAIN_H + GAP + MACD_H}" xmlns="http://www.w3.org/2000/svg" style="display:block">`;
+  s += `<rect width="${W}" height="${MAIN_H + GAP + MACD_H}" fill="#0b1330"/>`;
+  // grid + price labels
+  for (let g = 0; g <= 4; g++) {
+    const val = min + ((max - min) / 4) * g; const y = yP(val);
+    s += `<line x1="${PADL}" y1="${y}" x2="${W - PADR}" y2="${y}" stroke="rgba(255,255,255,.06)"/>`;
+    s += `<text x="${PADL - 6}" y="${y + 4}" fill="#8fa6c3" font-size="10" text-anchor="end">${val.toFixed(2)}</text>`;
+  }
+  // MACD zero line
+  s += `<line x1="${PADL}" y1="${macdY(0)}" x2="${W - PADR}" y2="${macdY(0)}" stroke="rgba(255,255,255,.18)"/>`;
+  s += `<text x="${PADL}" y="${MAIN_H + GAP + MACD_H - 4}" fill="#8fa6c3" font-size="10">MACD</text>`;
+
+  // candles
+  for (let i = 0; i < n; i++) {
+    const c = candles[i]!; const x = xP(i); const up = c.close >= c.open;
+    const col = up ? '#35ff9b' : '#ff4d6d';
+    const yO = yP(c.open), yC = yP(c.close);
+    // wick
+    s += `<line x1="${x}" y1="${yP(c.high)}" x2="${x}" y2="${yP(c.low)}" stroke="${col}" stroke-width="1"/>`;
+    // body
+    const top = Math.min(yO, yC), h = Math.max(1, Math.abs(yO - yC));
+    s += `<rect x="${x - bodyW / 2}" y="${top}" width="${bodyW}" height="${h}" fill="${col}" rx="1"/>`;
+    // MACD bar
+    const mv = macd[i] ?? 0;
+    s += `<rect x="${x - bodyW / 2}" y="${Math.min(macdY(mv), macdY(0))}" width="${bodyW}" height="${Math.max(1, Math.abs(macdY(mv) - macdY(0)))}" fill="${mv >= 0 ? 'rgba(69,229,255,.7)' : 'rgba(255,77,109,.7)'}"/>`;
+  }
+  // EMA9, EMA20, VWAP polylines
+  const poly = (vals: number[]) => vals.map((v, i) => `${xP(i + (n - vals.length))},${yP(v)}`).join(' ');
+  if (ema9.length) s += `<polyline points="${poly(ema9)}" fill="none" stroke="#45e5ff" stroke-width="2"/>`;
+  if (ema20.length) s += `<polyline points="${poly(ema20)}" fill="none" stroke="#7b61ff" stroke-width="2"/>`;
+  s += `<polyline points="${vwap.map((v, i) => `${xP(i)},${yP(v)}`).join(' ')}" fill="none" stroke="#ffcc66" stroke-width="2" stroke-dasharray="4 3"/>`;
+  s += `<text x="${PADL}" y="${TOP - 8}" fill="#8fa6c3" font-size="10">Last ${candles[n-1]!.close.toFixed(2)}</text>`;
+  s += `</svg>`;
+  return s;
 }
 
 function NotifierBanner({ morning, openCount, hasTrades, onAction }: { morning: boolean; openCount: number; hasTrades: boolean; onAction?: () => void }) {

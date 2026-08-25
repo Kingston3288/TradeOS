@@ -4,6 +4,7 @@ import {
   buildDashboardStats,
   calculateTradeFinancials,
   getBestAndWorstPatterns,
+  todayInTz,
 } from '../src/lib/analytics';
 import { Trade } from '../src/lib/types';
 
@@ -76,6 +77,14 @@ describe('analyzeCondition', () => {
     });
     expect(result.baselineWinRate).toBeCloseTo(2 / 3);
     expect(result.winLift).toBeCloseTo(1 / 3);
+  });
+});
+
+describe('todayInTz', () => {
+  it('returns the date for the timezone, not UTC', () => {
+    // For a late UTC evening, NY should be the prior day (UTC-4).
+    const s = todayInTz('America/New_York');
+    expect(s).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
 

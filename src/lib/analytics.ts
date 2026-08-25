@@ -64,7 +64,16 @@ function isWithinDays(trade: Trade, currentDate: string, days: number, timezone 
   return diffDays >= 0 && diffDays < days;
 }
 
-export function buildDashboardStats(trades: Trade[], currentDate = new Date().toISOString().slice(0, 10), timezone = 'America/New_York') {
+/** Today's date (YYYY-MM-DD) in a given IANA timezone — NOT UTC. */
+export function todayInTz(timezone = 'America/New_York'): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+export function buildDashboardStats(trades: Trade[], currentDate: string = todayInTz('America/New_York'), timezone = 'America/New_York') {
   const closed = closedTrades(trades);
   const winningValues = closed.map(calculateTradeFinancials).map((r) => r.netProfitLoss ?? 0).filter((value) => value > 0);
   const losingValues = closed.map(calculateTradeFinancials).map((r) => r.netProfitLoss ?? 0).filter((value) => value < 0);
