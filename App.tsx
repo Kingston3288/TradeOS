@@ -922,7 +922,7 @@ function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote
       } catch (e) { if (alive) setErr(String(e)); }
     });
     return () => { alive = false; };
-  }, [symbol]);
+  }, [symbol, quote.candles.length]);
   return (
     <Modal transparent visible animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
@@ -932,7 +932,13 @@ function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote
             <TouchableOpacity onPress={onClose}><Text style={{ color: colors.muted }}>✕</Text></TouchableOpacity>
           </View>
           <Text style={[styles.mutedSmall, { marginBottom: 8 }]}>Candles · 9 EMA (cyan) · 20 EMA (violet) · VWAP (amber) · MACD</Text>
-          <div id={`techchart-${symbol}`} style={{ width: '100%', height: 460, borderRadius: 12, overflow: 'hidden', backgroundColor: '#0b1330' }} />
+          {!quote.candles?.length ? (
+            <View style={{ height: 460, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1330' }}>
+              <Text style={styles.muted}>No chart data available (market may be closed).</Text>
+            </View>
+          ) : (
+            <div id={`techchart-${symbol}`} style={{ width: '100%', height: 460, borderRadius: 12, overflow: 'hidden', backgroundColor: '#0b1330' }} />
+          )}
           {err ? <Text style={styles.error}>{err}</Text> : null}
         </View>
       </View>

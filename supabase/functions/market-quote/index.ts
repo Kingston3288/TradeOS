@@ -15,8 +15,8 @@ const cors = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
 
-// Small in-memory cache: symbol -> {price, pct, time} for ~75s to respect rate limits.
-const cache = new Map<string, { price: number; pct: number; time: number }>()
+// Small in-memory cache: symbol -> {price, pct, change, candles, time} for ~75s.
+const cache = new Map<string, { price: number; pct: number; change: number; candles: Array<{ time: number; open: number; high: number; low: number; close: number }>; time: number }>()
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
 
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
 
   const cached = cache.get(symbol)
   if (cached && Date.now() - cached.time < 75000) {
-    return new Response(JSON.stringify({ symbol, price: cached.price, pct: cached.pct, cached: true }), { headers: { ...cors, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ symbol, price: cached.price, pct: cached.pct, change: cached.change, candles: cached.candles, cached: true }), { headers: { ...cors, 'Content-Type': 'application/json' } })
   }
 
   // Fetch real price + history from Yahoo.
@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
       pct = previous.close ? (change / previous.close) * 100 : 0
     }
 
-    cache.set(symbol, { price, pct, time: Date.now() })
+    cache.set(symbol, { price, pct, change, candles, time: Date.now() })
     return new Response(JSON.stringify({ symbol, price, pct, change, candles: candles.slice(-130), cached: false }), { headers: { ...cors, 'Content-Type': 'application/json' } })
   } catch (e) {
     // If we have a stale cache entry, return it rather than erroring.
