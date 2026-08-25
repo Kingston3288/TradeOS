@@ -361,9 +361,10 @@ function TradingApp({ ownerEmail, onSignOut }: { ownerEmail: string; onSignOut: 
           {pendingSave && (
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>Save this trade?</Text>
+              {pendingSave.symbol ? <Text style={[styles.mutedSmall, { marginBottom: 8 }]}>{pendingSave.symbol.toUpperCase()} · {pendingSave.buyingType.toUpperCase()} · {pendingSave.contractCount} contracts</Text> : null}
               <View style={styles.predBox}>
                 <Text style={styles.predLabel}>Predicted win success (matched conditions)</Text>
-                <View style={styles.predTrack}><View style={[styles.predFill, { width: `${Math.min(100, prediction.percent)}%` }]} /></View>
+                <View style={[styles.predTrack, { height: 22 }]}><View style={[styles.predFill, { width: `${Math.min(100, prediction.percent)}%`, height: 22, shadowColor: '#35ff9b', shadowOpacity: .7, shadowRadius: 12, shadowOffset: { width: 0, height: 0 } }]} /></View>
                 <Text style={styles.predValue}>{prediction.percent}% <Text style={styles.mutedSmall}>· {prediction.matched} · n={prediction.sampleSize}</Text></Text>
               </View>
               <Text style={styles.mutedSmall}>Based on your closest matching condition combo from your trade history.</Text>
@@ -531,12 +532,28 @@ function TradeLog({ trades, onOpenEdit, onDelete }: { trades: Trade[]; onOpenEdi
 }
 
 function Analytics({ analyses, stats, trades }: { analyses: ReturnType<typeof analyzeAllConditions>; stats: ReturnType<typeof buildDashboardStats>; trades: Trade[] }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 780;
   const { setups, overallWinRate } = findHighProbabilitySetups(trades, 3);
   const rankings = rankCombosByWinRate(trades, 2);
   const expectancy = computeExpectancy(trades);
   const sizing = computePositionSizing(trades, localDatabase.settings.riskLimitPercent);
   const form = recentForm(trades, 20);
+  const toneColor = (tone: string) => ({ green: colors.green, cyan: colors.cyan, violet: colors.violet, red: colors.red, yellow: colors.yellow } as Record<string, string>)[tone] || colors.cyan;
+  const hero = [
+    { label: 'Overall Win Rate', value: formatPercent(overallWinRate), tone: 'green', detail: `${rankings.totalClosed} closed` },
+    { label: 'Expectancy / Trade', value: formatCurrency(expectancy.expectancy), tone: 'cyan', detail: 'avg net P/L' },
+    { label: 'Profit Factor', value: expectancy.profitFactor === Infinity ? '∞' : expectancy.profitFactor.toFixed(2), tone: 'violet', detail: 'gross win : loss' },
+    { label: 'Recent Form', value: formatPercent(form.recentWinRate), tone: 'yellow', detail: `last ${form.recentCount} vs overall` },
+  ];
   return <View style={styles.twoCol}>
+    {/* Probability engine hero strip */}
+    <GlassCard>
+      <Text style={styles.eyebrow}>Probability Engine</Text>
+      <View style={[styles.kpiGrid, compact && styles.oneCol]}>
+        {hero.map((h) => <View key={h.label} style={{ flex: 1, minWidth: 160, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.03)' }}><Text style={styles.mutedSmall}>{h.label}</Text><CountUp value={h.value} color={toneColor(h.tone)} /><Text style={styles.mutedSmall}>{h.detail}</Text></View>)}
+      </View>
+    </GlassCard>
     {/* Higher-probability set-ups, most important */}
     <GlassCard><Text style={styles.cardTitle}>Combos: Best → Least (Win / Loss rate)</Text>
       <Metric label="Overall win rate" value={`${formatPercent(overallWinRate)}`} />
@@ -834,7 +851,7 @@ const styles = StyleSheet.create({
   secondaryButton: { borderColor: colors.line, borderWidth: 1, padding: 13, borderRadius: 15, alignSelf: 'flex-start', marginTop: 14 },
   buttonText: { color: colors.text, fontWeight: '900' },
   error: { color: colors.red, marginBottom: 4 },
-  tradeRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,.07)' },
+  tradeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,.08)', backgroundColor: 'rgba(255,255,255,.03)', marginBottom: 10 },
   editUnderlay: { position: 'absolute', top: 0, bottom: 0, width: 96, right: 0, backgroundColor: '#35ff9b', justifyContent: 'center', alignItems: 'flex-start', paddingLeft: 22, borderRadius: 14 },
   editBtn: { width: '100%', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: 'transparent', alignItems: 'flex-start' },
   tradeSymbol: { color: colors.text, fontWeight: '900' },
