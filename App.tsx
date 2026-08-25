@@ -823,7 +823,9 @@ function TickerStrip({ trades }: { trades: Trade[] }) {
   // Real latest prices via Supabase edge-function proxy (server-side Yahoo fetch),
   // with deterministic offline fallback derived from the user's own trades.
   const syms: string[] = Array.from(new Set(trades.map((t) => t.symbol).filter((s): s is string => Boolean(s)))).slice(0, 6);
-  const [live, setLive] = React.useState<Record<string, { price: number; pct: number }>>({});
+  type Quote = { price: number; pct: number; change: number; candles: Array<{ time: number; open: number; high: number; low: number; close: number }> };
+  const [live, setLive] = React.useState<Record<string, Quote>>({});
+  const [chartSym, setChartSym] = React.useState<string | null>(null);
   React.useEffect(() => {
     if (syms.length === 0) return;
     let alive = true;
@@ -831,12 +833,12 @@ function TickerStrip({ trades }: { trades: Trade[] }) {
       try {
         const sess = (await supabase.auth.getSession()).data.session;
         const token = sess?.access_token;
-        const out: Record<string, { price: number; pct: number }> = {};
+        const out: Record<string, Quote> = {};
         await Promise.all(syms.map(async (sym) => {
           try {
             const url = `${SUPABASE_URL}/functions/v1/market-quote?symbol=${encodeURIComponent(sym)}`;
             const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY } });
-            if (res.ok) { const j = await res.json(); if (j.price) out[sym] = { price: j.price, pct: j.pct ?? 0 }; }
+            if (res.ok) { const j = await res.json(); if (j.price) out[sym] = { price: j.price, pct: j.pct ?? 0, change: j.change ?? 0, candles: j.candles ?? [] }; }
           } catch { /* fallback below */ }
         }));
         if (alive) setLive(out);
@@ -848,24 +850,91 @@ function TickerStrip({ trades }: { trades: Trade[] }) {
   if (syms.length === 0) return null;
   const items = syms.map((sym) => {
     const real = live[sym];
-    if (real) return { sym, price: real.price.toFixed(2), up: real.pct >= 0, pct: Math.abs(real.pct).toFixed(2), live: true };
-    // offline fallback derived from own trades
+    if (real) return { sym, quote: real, live: true };
     const buys = trades.filter((t) => t.symbol === sym && t.purchasePrice > 0);
     const base = buys.length && buys[buys.length - 1]!.purchasePrice;
     const price = base ? (base * (1 + ((sym.length % 5) - 2) / 400)).toFixed(2) : '—';
     const up = (sym.length % 3) !== 0;
     const pct = ((sym.length % 7) + 1).toFixed(2);
-    return { sym, price, up, pct, live: false };
+    return { sym, quote: { price, pct: parseFloat(pct), change: 0, candles: [] } as unknown as Quote, up, pctStr: pct, live: false };
   });
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.02)' }}>
-      {items.map((it) => (
-        <View key={it.sym} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text style={{ fontSize: 11, fontWeight: '900', color: colors.text }}>{it.sym}</Text>
-          <Text style={{ fontSize: 10, fontWeight: '700', color: it.up ? colors.green : colors.red }}>{it.price} {it.up ? '▲' : '▼'} {it.pct}%{it.live ? '' : '°'}</Text>
-        </View>
-      ))}
+    <View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: 'rgba(255,255,255,.02)' }}>
+        {items.map((it) => {
+          const q = it.quote;
+          const up = (it.live ? q.pct >= 0 : it.up);
+          return (
+            <TouchableOpacity key={it.sym} onPress={() => { if (it.live && q.candles?.length) setChartSym(it.sym); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, padding: 3, borderRadius: 8 }}>
+              <Text style={{ fontSize: 11, fontWeight: '900', color: colors.text }}>{it.sym}</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: up ? colors.green : colors.red }}>
+                {it.live ? `${q.price.toFixed(2)} ${q.change >= 0 ? '+' : ''}${q.change.toFixed(2)} (${q.pct >= 0 ? '+' : ''}${q.pct.toFixed(2)}%)` : `${q.price} ${up ? '▲' : '▼'} ${it.pctStr}%°`}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {chartSym && live[chartSym]?.candles?.length ? (
+        <TechnicalChartModal symbol={chartSym} quote={live[chartSym]!} onClose={() => setChartSym(null)} />
+      ) : null}
     </View>
+  );
+}
+
+function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote: { candles: Array<{ time: number; open: number; high: number; low: number; close: number }> }; onClose: () => void }) {
+  const [err, setErr] = React.useState('');
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    import('lightweight-charts').then((mod: any) => {
+      try {
+        const root = document.getElementById('techchart-root') as HTMLDivElement | null;
+        if (!root) return;
+        root.innerHTML = '';
+        const c = mod.createChart(root, { width: root.clientWidth || 600, height: 440, layout: { background: { color: '#0b1330' }, textColor: '#8fa6c3' }, grid: { vertLines: { color: 'rgba(255,255,255,.06)' }, horzLines: { color: 'rgba(255,255,255,.06)' } }, rightPriceScale: { borderColor: 'rgba(255,255,255,.12)' }, timeScale: { borderColor: 'rgba(255,255,255,.12)' } });
+        const candle = c.addSeries(mod.CandlestickSeries, { upColor: '#35ff9b', downColor: '#ff4d6d', wickUpColor: '#35ff9b', wickDownColor: '#ff4d6d', borderVisible: false });
+        candle.setData(quote.candles.map((x) => ({ time: x.time as any, open: x.open, high: x.high, low: x.low, close: x.close })));
+        const ema = (period: number) => {
+          const k = 2 / (period + 1); let prev = 0; const out: Array<{ time: number; value: number }> = [];
+          for (let i = 0; i < quote.candles.length; i++) {
+            const cc = quote.candles[i]!;
+            prev = i === 0 ? cc.close : cc.close * k + prev * (1 - k);
+            if (i >= period - 1) out.push({ time: cc.time, value: prev });
+          }
+          return out;
+        };
+        c.addSeries(mod.LineSeries, { color: '#45e5ff', lineWidth: 2 }).setData(ema(9).map((d) => ({ time: d.time as any, value: d.value })));
+        c.addSeries(mod.LineSeries, { color: '#7b61ff', lineWidth: 2 }).setData(ema(20).map((d) => ({ time: d.time as any, value: d.value })));
+        const vwap = c.addSeries(mod.LineSeries, { color: '#ffcc66', lineWidth: 2 });
+        let cumPV = 0;
+        vwap.setData(quote.candles.map((cc) => { const tp = (cc.high + cc.low + cc.close) / 3; cumPV += tp; return { time: cc.time as any, value: cumPV / (quote.candles.indexOf(cc) + 1) }; }));
+        const pane = c.addPane();
+        const macd = pane.addSeries(mod.HistogramSeries, { priceFormat: { type: 'price' }, color: '#45e5ff', base: 0 });
+        const fast = ema(12); const slow = ema(26);
+        const macdData: Array<{ time: number; value: number }> = [];
+        for (let i = 25; i < quote.candles.length; i++) {
+          const f = fast[i]?.value ?? 0, s = slow[i]?.value ?? 0;
+          macdData.push({ time: quote.candles[i]!.time, value: f - s });
+        }
+        macd.setData(macdData.map((d) => ({ time: d.time as any, value: d.value })));
+        c.fitContent();
+      } catch (e) { setErr(String(e)); }
+    });
+    return () => { const root = document.getElementById('techchart-root'); if (root) root.innerHTML = ''; };
+  }, [symbol, quote]);
+  return (
+    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, { maxWidth: 760 }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={styles.modalTitle}>{symbol} — Technical Chart</Text>
+            <TouchableOpacity onPress={onClose}><Text style={{ color: colors.muted }}>✕</Text></TouchableOpacity>
+          </View>
+          <Text style={[styles.mutedSmall, { marginBottom: 8 }]}>Candles · 9 EMA (cyan) · 20 EMA (violet) · VWAP (amber) · MACD</Text>
+          {typeof document !== 'undefined' && <div id="techchart-root" style={{ width: '100%', borderRadius: 12, overflow: 'hidden' }} />}
+          {err ? <Text style={styles.error}>{err}</Text> : null}
+        </View>
+      </View>
+    </Modal>
   );
 }
 

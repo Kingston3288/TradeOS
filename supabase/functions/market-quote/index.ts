@@ -42,18 +42,33 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ symbol, price: cached.price, pct: cached.pct, cached: true }), { headers: { ...cors, 'Content-Type': 'application/json' } })
   }
 
-  // Fetch real price from Yahoo.
+  // Fetch real price + history from Yahoo.
   try {
-    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } })
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=6mo`, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } })
     if (!r.ok) throw new Error('yahoo ' + r.status)
     const j = await r.json() as any
-    const meta = j?.chart?.result?.[0]?.meta
+    const result = j?.chart?.result?.[0]
+    const meta = result?.meta
     const price = meta?.regularMarketPrice
     const prev = meta?.chartPreviousClose ?? meta?.previousClose
     const pct = price && prev ? ((price - prev) / prev) * 100 : 0
+    const change = price && prev ? price - prev : 0
     if (!price) throw new Error('no price')
+
+    // Build OHLCV history for the chart.
+    const t = result?.timestamp as number[] | undefined
+    const q = result?.indicators?.quote?.[0]
+    const candles: Array<{ time: number; open: number; high: number; low: number; close: number }> = []
+    if (t && q) {
+      for (let i = 0; i < t.length; i++) {
+        const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i]
+        if (o == null || h == null || l == null || c == null) continue
+        candles.push({ time: t[i], open: o, high: h, low: l, close: c })
+      }
+    }
+
     cache.set(symbol, { price, pct, time: Date.now() })
-    return new Response(JSON.stringify({ symbol, price, pct, cached: false }), { headers: { ...cors, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ symbol, price, pct, change, candles: candles.slice(-130), cached: false }), { headers: { ...cors, 'Content-Type': 'application/json' } })
   } catch (e) {
     // If we have a stale cache entry, return it rather than erroring.
     if (cached) return new Response(JSON.stringify({ symbol, price: cached.price, pct: cached.pct, cached: true, stale: true }), { headers: { ...cors, 'Content-Type': 'application/json' } })
