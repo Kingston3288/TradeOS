@@ -204,3 +204,18 @@ footer strong { color: var(--text); }
   .million-panel, .private-beta { padding: 24px; }
   .floating-ticket, .orbital-ring { display: none; }
 }
+@media (max-width: 420px) {
+  main, .nav, footer { width: min(100% - 20px, 1180px); }
+  h1 { font-size: clamp(40px, 11vw, 58px); max-width: 100%; overflow-wrap: anywhere; }
+  .hero-subtitle { font-size: 16px; max-width: 100%; overflow-wrap: anywhere; }
+  .nav-brand { font-size: 20px; }
+  .login-panel { padding: 20px; }
+  .feature-card h3 { font-size: 18px; }
+  .feature-card p { font-size: 14px; overflow-wrap: anywhere; }
+  .kpi b { font-size: 18px; }
+  .metric-grid { gap: 10px; }
+  .nav { gap: 6px; }
+  .nav a:not(.nav-cta) { padding: 8px 10px; font-size: 13px; }
+  .nav-cta { padding: 10px 14px; font-size: 13px; }
+  body, .hero, .main-card, .million-panel, .private-beta, .features { overflow-x: hidden; }
+}

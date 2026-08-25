@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import type { Session } from '@supabase/supabase-js';
 import { analyzeAllConditions, averageDaysHeld, bestRecommendedSetup, buildDashboardStats, buildTradesCsv, breakDownByStrategy, breakDownBySymbol, calculateTradeFinancials, computeExpectancy, computePositionSizing, findHighProbabilitySetups, formatCurrency, formatPercent, predictSuccessRate, probGrade, riskReward, rankCombosByWinRate, recentForm, todayInTz, winRateByTimeOfDay, winRateByWeekday, winRateByDirection, winRateByMarketCombo, VWAP_LABELS, MACD_LABELS } from './src/lib/analytics';
 import { createTradeDraft, localDatabase } from './src/lib/storage';
-import { Trade } from './src/lib/types';
+import type { Trade, PeriodStats } from './src/lib/types';
 import { validateTradeInput } from './src/lib/validation';
 import { uuid } from './src/lib/uuid';
 import { colors, shadow } from './src/theme';
@@ -406,6 +406,13 @@ function Dashboard({ stats, compact, trades, onNewTrade }: { stats: ReturnType<t
   const openCount = trades.filter((t) => t.status === 'open').length;
   const hour = new Date().getHours();
   const morning = hour >= 8 && hour < 11;
+  const [statModal, setStatModal] = React.useState<{ title: string; rows: Array<{ period: string; value: string; detail?: string; tone: 'green' | 'red' | 'cyan' | 'yellow' | 'muted' }> } | null>(null);
+  const p = (period: string, value: string, tone: 'green' | 'red' | 'cyan' | 'yellow' | 'muted', detail?: string) => detail === undefined ? { period, value, tone } : { period, value, tone, detail };
+  const modalD = (periods: { daily: PeriodStats; weekly: PeriodStats; monthly: PeriodStats }) => [
+    p('Today', formatCurrency(periods.daily.netProfitLoss), periods.daily.netProfitLoss >= 0 ? 'green' : 'red', `${periods.daily.wins}W/${periods.daily.losses}L · ${periods.daily.totalTrades} trades`),
+    p('This Week', formatCurrency(periods.weekly.netProfitLoss), periods.weekly.netProfitLoss >= 0 ? 'green' : 'red', `${periods.weekly.wins}W/${periods.weekly.losses}L · ${periods.weekly.totalTrades} trades`),
+    p('This Month', formatCurrency(periods.monthly.netProfitLoss), periods.monthly.netProfitLoss >= 0 ? 'green' : 'red', `${periods.monthly.wins}W/${periods.monthly.losses}L · ${periods.monthly.totalTrades} trades`),
+  ];
   return <View>
     <NotifierBanner morning={morning} openCount={openCount} hasTrades={hasTrades} onAction={onNewTrade} />
     {!hasTrades && (
@@ -424,12 +431,29 @@ function Dashboard({ stats, compact, trades, onNewTrade }: { stats: ReturnType<t
       </View>
     )}
     <View style={[styles.kpiGrid, compact && styles.oneCol]}>
-      <Kpi label="Daily P/L" value={formatCurrency(stats.daily.netProfitLoss)} tone={stats.daily.netProfitLoss >= 0 ? 'green' : 'red'} detail={`${stats.daily.wins}W / ${stats.daily.losses}L`} />
-      <Kpi label="Win Rate" value={formatPercent(stats.winRate)} tone="cyan" detail={`${stats.totalWins}W / ${stats.totalLosses}L closed`} />
-      <Kpi label="Average Win" value={formatCurrency(stats.averageWinningTrade)} tone="green" detail="Avg winning trade" />
-      <Kpi label="Average Loss" value={formatCurrency(stats.averageLosingTrade)} tone="yellow" detail="Avg losing trade" />
-      <Kpi label="Rule Discipline" value={formatPercent(stats.ruleDisciplineScore)} tone="green" detail="Checklist adherence" />
+      <Kpi label="Daily P/L" value={formatCurrency(stats.daily.netProfitLoss)} tone={stats.daily.netProfitLoss >= 0 ? 'green' : 'red'} detail={`${stats.daily.wins}W / ${stats.daily.losses}L`} onPress={() => setStatModal({ title: 'Profit / Loss', rows: modalD(stats) })} />
+      <Kpi label="Win Rate" value={formatPercent(stats.winRate)} tone="cyan" detail={`${stats.totalWins}W / ${stats.totalLosses}L closed`} onPress={() => setStatModal({ title: 'Win Rate', rows: [
+        p('Today', formatPercent(stats.daily.winRate), 'cyan', `${stats.daily.wins}W/${stats.daily.losses}L`),
+        p('This Week', formatPercent(stats.weekly.winRate), 'cyan', `${stats.weekly.wins}W/${stats.weekly.losses}L`),
+        p('This Month', formatPercent(stats.monthly.winRate), 'cyan', `${stats.monthly.wins}W/${stats.monthly.losses}L`),
+      ] })} />
+      <Kpi label="Average Win" value={formatCurrency(stats.averageWinningTrade)} tone="green" detail="Avg winning trade" onPress={() => setStatModal({ title: 'Average Win', rows: [
+        p('Today', formatCurrency(stats.daily.averageWinningTrade), 'green'),
+        p('This Week', formatCurrency(stats.weekly.averageWinningTrade), 'green'),
+        p('This Month', formatCurrency(stats.monthly.averageWinningTrade), 'green'),
+      ] })} />
+      <Kpi label="Average Loss" value={formatCurrency(stats.averageLosingTrade)} tone="yellow" detail="Avg losing trade" onPress={() => setStatModal({ title: 'Average Loss', rows: [
+        p('Today', formatCurrency(stats.daily.averageLosingTrade), 'yellow'),
+        p('This Week', formatCurrency(stats.weekly.averageLosingTrade), 'yellow'),
+        p('This Month', formatCurrency(stats.monthly.averageLosingTrade), 'yellow'),
+      ] })} />
+      <Kpi label="Rule Discipline" value={formatPercent(stats.ruleDisciplineScore)} tone="green" detail="Checklist adherence" onPress={() => setStatModal({ title: 'Rule Discipline', rows: [
+        p('Today', `${stats.ruleDisciplineScore >= 0 ? '' : ''}—`, 'muted'),
+        p('This Week', `${stats.ruleDisciplineScore >= 0 ? '' : ''}—`, 'muted'),
+        p('This Month', `${stats.ruleDisciplineScore >= 0 ? '' : ''}—`, 'muted'),
+      ] })} />
     </View>
+    {statModal ? <StatsModal title={statModal.title} rows={statModal.rows} onClose={() => setStatModal(null)} /> : null}
     <View style={[styles.twoCol, compact && styles.oneCol, { marginTop: 4 }]}>
       <View style={{ flex: 1.4, minWidth: 300 }}>
         {results.length >= 2 ? <ResultLineChart results={results} /> : <GlassCard><Text style={styles.cardTitle}>Results Trend</Text><Text style={styles.muted}>Log 2+ trades to see your cumulative P/L trend here.</Text></GlassCard>}
@@ -802,7 +826,42 @@ function EditTradeModal({ trade, onClose, onSave }: { trade: Trade | null; onClo
   );
 }
 function GlassCard({ children }: { children: React.ReactNode }) { return <View style={styles.card}>{children}</View>; }
-function Kpi({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'green' | 'red' | 'cyan' | 'yellow' }) { return <View style={[styles.card, { borderLeftWidth: 3, borderLeftColor: colors[tone] }]}><Text style={styles.mutedSmall}>{label}</Text><CountUp value={value} color={colors[tone]} /><Text style={styles.mutedSmall}>{detail}</Text></View>; }
+function Kpi({ label, value, detail, tone, onPress }: { label: string; value: string; detail: string; tone: 'green' | 'red' | 'cyan' | 'yellow'; onPress?: () => void }) { return (
+  <TouchableOpacity activeOpacity={onPress ? 0.8 : 1} disabled={!onPress} onPress={onPress} style={[styles.card, { borderLeftWidth: 3, borderLeftColor: colors[tone], flex: 1, minWidth: 160 }]}>
+    <Text style={styles.mutedSmall}>{label}</Text>
+    <CountUp value={value} color={colors[tone]} />
+    <Text style={styles.mutedSmall}>{detail}</Text>
+    {onPress ? <Text style={[styles.mutedSmall, { marginTop: 4, color: colors.cyan }]}>Tap for Daily · Weekly · Monthly ▸</Text> : null}
+  </TouchableOpacity>
+); }
+
+/** Popup showing a metric across Daily / Weekly / Monthly periods. */
+function StatsModal({ title, rows, onClose }: { title: string; rows: Array<{ period: string; value: string; detail?: string; tone: 'green' | 'red' | 'cyan' | 'yellow' | 'muted' }>; onClose: () => void }) {
+  return (
+    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={styles.modalTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose}><Text style={{ color: colors.muted }}>✕</Text></TouchableOpacity>
+          </View>
+          <View style={{ marginTop: 12 }}>
+            {rows.map((r) => {
+              const col = r.tone === 'muted' ? colors.muted : colors[r.tone];
+              return (
+                <View key={r.period} style={[styles.metric, { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,.06)', alignItems: 'center' }]}>
+                  <Text style={[styles.muted, { flex: 1, fontWeight: '800' }]}>{r.period}</Text>
+                  <Text style={{ color: col, fontWeight: '900', fontSize: 18 }}>{r.value}</Text>
+                  {r.detail ? <Text style={[styles.mutedSmall, { marginLeft: 10 }]}>{r.detail}</Text> : null}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 function CountUp({ value, color }: { value: string; color: string }) {
   const target = (() => { const n = parseFloat(value.replace(/[$,%]/g, '')); return isNaN(n) ? 0 : n; })();
@@ -932,10 +991,18 @@ function TechnicalChartModal({ symbol, quote, onClose }: { symbol: string; quote
 }
 
 /** Render 5-min candles + 9/20 SMA + VWAP + MACD as a self-contained SVG (works on any static host, no external chart lib). */
-function technicalChartSvg(candles: Array<{ time: number; open: number; high: number; low: number; close: number }>, _symbol: string): string {
-  const W = 680, MAIN_H = 340, MACD_H = 110, PADL = 60, PADR = 16, TOP = 24, GAP = 16;
+function technicalChartSvg(allCandles: Array<{ time: number; open: number; high: number; low: number; close: number }>, _symbol: string): string {
+  // Scope to a single trading session: keep the most recent trading day's NY 9:30–16:00 candles.
+  const fmt = (ts: number) => { const d = new Date(ts * 1000); return { ymd: [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()].join('-'), minutes: d.getUTCHours() * 60 + d.getUTCMinutes(), tz: d }; };
+  const lastDay = allCandles.length ? fmt(allCandles[allCandles.length - 1]!.time).ymd : '';
+  const candles = allCandles.filter((c) => {
+    const f = fmt(c.time);
+    if (f.ymd !== lastDay) return false;
+    return f.minutes >= 570 && f.minutes <= 960; // 9:30am=570min, 4pm=960min
+  });
   const n = candles.length;
   if (n === 0) return '';
+  const W = 680, MAIN_H = 340, MACD_H = 110, PADL = 60, PADR = 16, TOP = 24, GAP = 16;
   const chartW = W - PADL - PADR;
   const closes = candles.map((c) => c.close);
   // SMA helper (simple moving average)
@@ -999,7 +1066,15 @@ function technicalChartSvg(candles: Array<{ time: number; open: number; high: nu
   if (sma9.length) s += `<polyline points="${poly(sma9)}" fill="none" stroke="#45e5ff" stroke-width="2"/>`;
   if (sma20.length) s += `<polyline points="${poly(sma20)}" fill="none" stroke="#ff8c42" stroke-width="2"/>`;
   s += `<polyline points="${vwap.map((v, i) => `${xP(i)},${yP(v)}`).join(' ')}" fill="none" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3"/>`;
-  s += `<text x="${PADL}" y="${TOP - 8}" fill="#8fa6c3" font-size="10">Last ${candles[n-1]!.close.toFixed(2)}</text>`;
+  s += `<text x="${PADL}" y="${TOP - 8}" fill="#8fa6c3" font-size="10">Last ${candles[n-1]!.close.toFixed(2)} · Session 9:30–4:00</text>`;
+  // Time axis: label key hours (10, 11, 12, 1, 2, 3, 4) across the session
+  const labels = [[10,'10'], [11,'11'], [12,'12'], [13,'1'], [14,'2'], [15,'3'], [16,'4']].map(([h, lbl]) => {
+    const t = Math.max(0, Math.min(1, ((h as number) - 9.5) / 6.5));
+    return `<text x="${PADL + t * chartW}" y="${MAIN_H + GAP + 12}" fill="#8fa6c3" font-size="10" text-anchor="middle">${lbl}</text>`;
+  }).join('');
+  s += labels;
+  s += `<text x="${PADL}" y="${MAIN_H + GAP + 12}" fill="#8fa6c3" font-size="10" text-anchor="start">9:30</text>`;
+  s += `<text x="${PADL + chartW}" y="${MAIN_H + GAP + 12}" fill="#8fa6c3" font-size="10" text-anchor="end">4:00</text>`;
   s += `</svg>`;
   return s;
 }
